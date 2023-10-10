@@ -31,7 +31,7 @@ inline fn speed_test() !void {
         .imm0 = 1
     };
     for (0..100) |inst_addr| {
-        try hart.store(.word, @as(u32, @intCast(inst_addr)) * 4, @as(u32, @bitCast(inst)));
+        try hart.store(.word, @as(u32, @intCast(inst_addr)) * 4, @bitCast(inst));
     }
     const expectEqual = std.testing.expectEqual;
     var times = [_]u64{0} ** 12;
@@ -74,14 +74,14 @@ inline fn real_test() !void {
     const file = try std.fs.openFileAbsolute(&file_path, .{});
     try load.elf(&hart, file);
     file.close();
-    try hart.store(.halfword, 512, 1);
-    try hart.store(.halfword, 516, 2);
+    try hart.store(.halfword, 512, .{ .unsigned = 1 });
+    try hart.store(.halfword, 516, .{ .unsigned = 2 });
     for (0..10) |_| {
         print("{X:0>8}\n", .{ hart.getPc() });
         for (0..31) |reg| {
-            print("{X:0>8} ", .{ hart.getXRegister(.unsigned, @intCast(reg)) });
+            print("{X:0>8} ", .{ hart.getXRegister(@intCast(reg)).unsigned });
         } else {
-            print("{X:0>8}\n\n", .{ hart.getXRegister(.unsigned, 31) });
+            print("{X:0>8}\n\n", .{ hart.getXRegister(31).unsigned });
         }
         if (try hart.tick()) |trap| {
             switch (trap) {
@@ -102,5 +102,4 @@ comptime {
     }
 }
 
-// todo switch inst_format get/setImmediate to using Data
 // todo add InstructionContext (like std.io.Reader) for instructions to execute in

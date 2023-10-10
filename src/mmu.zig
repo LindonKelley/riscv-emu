@@ -30,19 +30,22 @@ pub fn BasicMmu(comptime XLEN: comptime_int) type {
         memory: [1 << 17]u8 align(@intFromEnum(MemoryValueWidth.doubleword)) = undefined,
 
         // todo there must be an error missing for out of bounds access
-        pub fn load(self: *@This(), comptime width: MemoryValueWidth, address: Int(.unsigned, XLEN)) LoadError!width.Unsigned() {
-            if (address % @intFromEnum(width) == 0) {
+        // todo needs to allow arbitrary additions to the error set:
+        //  "The EEI will define what portions of the address space are legal to access with
+        // which instructions (e.g., some addresses might be read only, or support word access only)."
+        pub fn load(self: *@This(), comptime width: MemoryValueWidth, address: Int(.unsigned, XLEN)) LoadError!width.Data() {
+            if (address % width.bytes() == 0) {
                 const ptr = self.memory[address..];
-                return std.mem.readIntNative(width.Unsigned(), ptr[0..@intFromEnum(width)]);
+                return .{ .unsigned = std.mem.readIntNative(width.Unsigned(), ptr[0..width.bytes()]) };
             } else {
                 return error.LoadAddressMisaligned;
             }
         }
 
-        pub fn store(self: *@This(), comptime width: MemoryValueWidth, address: Int(.unsigned, XLEN), data: width.Unsigned()) StoreError!void {
-            if (address % @intFromEnum(width) == 0) {
+        pub fn store(self: *@This(), comptime width: MemoryValueWidth, address: Int(.unsigned, XLEN), data: width.Data()) StoreError!void {
+            if (address % width.bytes() == 0) {
                 const ptr = self.memory[address..];
-                std.mem.writeIntNative(width.Unsigned(), ptr[0..@intFromEnum(width)], data);
+                std.mem.writeIntNative(width.Unsigned(), ptr[0..width.bytes()], data.unsigned);
             } else {
                 return error.StoreAddressMisaligned;
             }
@@ -67,14 +70,22 @@ pub const MemoryValueWidth = enum(u8) {
     doubleword = 8,
 
     pub fn Unsigned(comptime self: @This()) type {
-        return Int(.unsigned, @intFromEnum(self) * 8);
+        return Int(.unsigned, self.bits());
     }
 
     pub fn Signed(comptime self: @This()) type {
-        return Int(.signed, @intFromEnum(self) * 8);
+        return Int(.signed, self.bits());
     }
 
     pub fn Data(comptime self: @This()) type {
-        return raw_data.Data(@intFromEnum(self) * 8);
+        return raw_data.Data(self.bits());
+    }
+
+    pub fn bits(comptime self: @This()) comptime_int {
+        return self.bytes() * 8;
+    }
+
+    pub fn bytes(comptime self: @This()) comptime_int {
+        return @intFromEnum(self);
     }
 };

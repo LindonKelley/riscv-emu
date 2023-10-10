@@ -92,9 +92,11 @@ pub const ADDI = struct {
     pub const ID = .{ opcode.OP_IMM, funct3.ADDI };
 
     pub fn execute(hart_ptr: anytype, inst: inst_format.I) void {
-        const rs1 = hart_ptr.getXRegister(.signed, inst.rs1);
-        const imm = inst.getImmediate();
-        hart_ptr.setXRegister(inst.rd, rs1 +% imm);
+        const arch = hart_arch(@TypeOf(hart_ptr.*));
+        const src = hart_ptr.getXRegister(inst.rs1).signed;
+        const imm = inst.getImmediate().signExtended(arch.XLEN).signed;
+        const res = .{ .signed = src +% imm };
+        hart_ptr.setXRegister(inst.rd, res);
     }
 
     test "ADDI" {
@@ -127,8 +129,8 @@ pub const ADDI = struct {
                         }
                     }
                 }
-                try expect(i == hart.getXRegister(.signed, register.a0));
-                try expect(-@as(isize, @intCast(i)) == hart.getXRegister(.signed, register.a1));
+                try expect(i == hart.getXRegister(register.a0).signed);
+                try expect(-@as(isize, @intCast(i)) == hart.getXRegister(register.a1).signed);
             }
             // todo overflow testing
         }
@@ -144,10 +146,11 @@ pub const SLTI = struct {
     pub const ID = .{ opcode.OP_IMM, funct3.SLTI };
 
     pub fn execute(hart_ptr: anytype, inst: inst_format.I) void {
-        const rs1 = hart_ptr.getXRegister(.signed, inst.rs1);
-        const imm = inst.getImmediate();
         const arch = hart_arch(@TypeOf(hart_ptr.*));
-        hart_ptr.setXRegister(inst.rd, if (rs1 < imm) @as(arch.usize, 1) else @as(arch.isize, 0));
+        const src = hart_ptr.getXRegister(inst.rs1).signed;
+        const imm = inst.getImmediate().signExtended(arch.XLEN).signed;
+        const res = .{ .unsigned =  if (src < imm) @as(arch.usize, 1) else @as(arch.usize, 0) };
+        hart_ptr.setXRegister(inst.rd, res);
     }
 };
 
@@ -160,10 +163,11 @@ pub const SLTIU = struct {
     pub const ID = .{ opcode.OP_IMM, funct3.SLTIU };
 
     pub fn execute(hart_ptr: anytype, inst: inst_format.I) void {
-        const rs1 = hart_ptr.getXRegister(.unsigned, inst.rs1);
         const arch = hart_arch(@TypeOf(hart_ptr.*));
-        const imm: arch.usize = @bitCast(@as(arch.isize, inst.getImmediate()));
-        hart_ptr.setXRegister(inst.rd, if (rs1 < imm) @as(arch.usize, 1) else @as(arch.usize, 0));
+        const src = hart_ptr.getXRegister(inst.rs1).unsigned;
+        const imm = inst.getImmediate().signExtended(arch.XLEN).unsigned;
+        const res = .{ .unsigned =  if (src < imm) @as(arch.usize, 1) else @as(arch.usize, 0) };
+        hart_ptr.setXRegister(inst.rd, res);
     }
 };
 
@@ -176,9 +180,11 @@ pub const ANDI = struct {
     pub const ID = .{ opcode.OP_IMM, funct3.ANDI };
 
     pub fn execute(hart_ptr: anytype, inst: inst_format.I) void {
-        const rs1 = hart_ptr.getXRegister(.signed, inst.rs1);
-        const imm = inst.getImmediate();
-        hart_ptr.setXRegister(inst.rd, rs1 & imm);
+        const arch = hart_arch(@TypeOf(hart_ptr.*));
+        const src = hart_ptr.getXRegister(inst.rs1).signed;
+        const imm = inst.getImmediate().signExtended(arch.XLEN).signed;
+        const res = .{ .signed = src & imm };
+        hart_ptr.setXRegister(inst.rd, res);
     }
 };
 
@@ -191,13 +197,15 @@ pub const ORI = struct {
     pub const ID = .{ opcode.OP_IMM, funct3.ORI };
 
     pub fn execute(hart_ptr: anytype, inst: inst_format.I) void {
-        const rs1 = hart_ptr.getXRegister(.signed, inst.rs1);
-        const imm = inst.getImmediate();
-        hart_ptr.setXRegister(inst.rd, rs1 | imm);
+        const arch = hart_arch(@TypeOf(hart_ptr.*));
+        const src = hart_ptr.getXRegister(inst.rs1).signed;
+        const imm = inst.getImmediate().signExtended(arch.XLEN).signed;
+        const res = .{ .signed = src | imm };
+        hart_ptr.setXRegister(inst.rd, res);
     }
 };
 
-/// XOR Immediate
+/// eXclusive OR Immediate
 ///
 /// `rd` = `rs1` ^ `imm`
 /// `XORI rd, rs1, -1` is equivelent to psuedoinstruction `NOT rd, rs1`
@@ -207,9 +215,11 @@ pub const XORI = struct {
     pub const ID = .{ opcode.OP_IMM, funct3.XORI };
 
     pub fn execute(hart_ptr: anytype, inst: inst_format.I) void {
-        const rs1 = hart_ptr.getXRegister(.signed, inst.rs1);
-        const imm = inst.getImmediate();
-        hart_ptr.setXRegister(inst.rd, rs1 ^ imm);
+        const arch = hart_arch(@TypeOf(hart_ptr.*));
+        const src = hart_ptr.getXRegister(inst.rs1).signed;
+        const imm = inst.getImmediate().signExtended(arch.XLEN).signed;
+        const res = .{ .signed = src ^ imm };
+        hart_ptr.setXRegister(inst.rd, res);
     }
 };
 
@@ -222,8 +232,9 @@ pub const SLLI = struct {
     pub const ID = .{ opcode.OP_IMM, funct3.SLLI, 0b000_0000 };
 
     pub fn execute(hart_ptr: anytype, inst: inst_format.IS) void {
-        const rs1 = hart_ptr.getXRegister(.unsigned, inst.rs1);
-        hart_ptr.setXRegister(inst.rd, rs1 << inst.shamt);
+        const src = hart_ptr.getXRegister(inst.rs1).unsigned;
+        const res = .{ .unsigned = src << inst.shamt };
+        hart_ptr.setXRegister(inst.rd, res);
     }
 };
 
@@ -236,8 +247,9 @@ pub const SRLI = struct {
     pub const ID = .{ opcode.OP_IMM, funct3.SRLI, 0b000_0000 };
 
     pub fn execute(hart_ptr: anytype, inst: inst_format.IS) void {
-        const rs1 = hart_ptr.getXRegister(.unsigned, inst.rs1);
-        hart_ptr.setXRegister(inst.rd, rs1 >> inst.shamt);
+        const src = hart_ptr.getXRegister(inst.rs1).unsigned;
+        const res = .{ .unsigned = src >> inst.shamt };
+        hart_ptr.setXRegister(inst.rd, res);
     }
 };
 
@@ -250,8 +262,9 @@ pub const SRAI = struct {
     pub const ID = .{ opcode.OP_IMM, funct3.SRAI, 0b000_0010 };
 
     pub fn execute(hart_ptr: anytype, inst: inst_format.IS) void {
-        const rs1 = hart_ptr.getXRegister(.signed, inst.rs1);
-        hart_ptr.setXRegister(inst.rd, rs1 >> inst.shamt);
+        const src = hart_ptr.getXRegister(inst.rs1).signed;
+        const res = .{ .signed = src >> inst.shamt };
+        hart_ptr.setXRegister(inst.rd, res);
     }
 };
 
@@ -264,8 +277,9 @@ pub const LUI = struct {
     pub const ID = .{opcode.LUI};
 
     pub fn execute(hart_ptr: anytype, inst: inst_format.U) void {
-        const imm = inst.getImmediate();
-        hart_ptr.setXRegister(inst.rd, imm);
+        const imm = inst.getImmediate().unsigned;
+        const res = .{ .unsigned = imm };
+        hart_ptr.setXRegister(inst.rd, res);
     }
 };
 
@@ -278,10 +292,10 @@ pub const AUIPC = struct {
     pub const ID = .{opcode.AUIPC};
 
     pub fn execute(hart_ptr: anytype, inst: inst_format.U) void {
-        const imm = inst.getImmediate();
-        const XLEN = @TypeOf(hart_ptr.*).XLEN;
-        const Isize = Int(.signed, XLEN);
-        hart_ptr.setXRegister(inst.rd, @as(Isize, @bitCast(hart_ptr.getPc())) +% imm);
+        const imm = inst.getImmediate().unsigned;
+        const pc = hart_ptr.getPc();
+        const res = .{ .unsigned = pc +% imm };
+        hart_ptr.setXRegister(inst.rd, res);
     }
 };
 
@@ -294,9 +308,11 @@ pub const ADD = struct {
     pub const ID = .{ opcode.OP, funct3.ADD, 0b000_0000 };
 
     pub fn execute(hart_ptr: anytype, inst: inst_format.R) void {
-        const rs1 = hart_ptr.getXRegister(.signed, inst.rs1);
-        const rs2 = hart_ptr.getXRegister(.signed, inst.rs2);
-        hart_ptr.setXRegister(inst.rd, rs1 + rs2);
+        const arch = hart_arch(@TypeOf(hart_ptr.*));
+        const src1 = hart_ptr.getXRegister(inst.rs1).signExtended(arch.XLEN).signed;
+        const src2 = hart_ptr.getXRegister(inst.rs2).signExtended(arch.XLEN).signed;
+        const res = .{ .signed = src1 +% src2 };
+        hart_ptr.setXRegister(inst.rd, res);
     }
 };
 
@@ -309,10 +325,11 @@ pub const SLT = struct {
     pub const ID = .{ opcode.OP, funct3.SLT, 0b000_0000 };
 
     pub fn execute(hart_ptr: anytype, inst: inst_format.R) void {
-        const rs1 = hart_ptr.getXRegister(.signed, inst.rs1);
-        const rs2 = hart_ptr.getXRegister(.signed, inst.rs2);
         const arch = hart_arch(@TypeOf(hart_ptr.*));
-        hart_ptr.setXRegister(inst.rd, if (rs1 < rs2) @as(arch.usize, 1) else @as(arch.usize, 0));
+        const src1 = hart_ptr.getXRegister(inst.rs1).signed;
+        const src2 = hart_ptr.getXRegister(inst.rs2).signed;
+        const res = .{ .unsigned = if (src1 < src2) @as(arch.usize, 1) else @as(arch.usize, 0) };
+        hart_ptr.setXRegister(inst.rd, res);
     }
 };
 
@@ -326,10 +343,11 @@ pub const SLTU = struct {
     pub const ID = .{ opcode.OP, funct3.SLTU, 0b000_0000 };
 
     pub fn execute(hart_ptr: anytype, inst: inst_format.R) void {
-        const rs1 = hart_ptr.getXRegister(.unsigned, inst.rs1);
-        const rs2 = hart_ptr.getXRegister(.unsigned, inst.rs2);
         const arch = hart_arch(@TypeOf(hart_ptr.*));
-        hart_ptr.setXRegister(inst.rd, if (rs1 < rs2) @as(arch.usize, 1) else @as(arch.usize, 0));
+        const src1 = hart_ptr.getXRegister(inst.rs1).unsigned;
+        const src2 = hart_ptr.getXRegister(inst.rs2).unsigned;
+        const res = .{ .unsigned = if (src1 < src2) @as(arch.usize, 1) else @as(arch.usize, 0) };
+        hart_ptr.setXRegister(inst.rd, res);
     }
 };
 
@@ -342,9 +360,10 @@ pub const AND = struct {
     pub const ID = .{ opcode.OP, funct3.AND, 0b000_0000 };
 
     pub fn execute(hart_ptr: anytype, inst: inst_format.R) void {
-        const rs1 = hart_ptr.getXRegister(.unsigned, inst.rs1);
-        const rs2 = hart_ptr.getXRegister(.unsigned, inst.rs2);
-        hart_ptr.setXRegister(inst.rd, rs1 & rs2);
+        const src1 = hart_ptr.getXRegister(inst.rs1).unsigned;
+        const src2 = hart_ptr.getXRegister(inst.rs2).unsigned;
+        const res = .{ .unsigned = src1 & src2 };
+        hart_ptr.setXRegister(inst.rd, res);
     }
 };
 
@@ -357,13 +376,14 @@ pub const OR = struct {
     pub const ID = .{ opcode.OP, funct3.OR, 0b000_0000 };
 
     pub fn execute(hart_ptr: anytype, inst: inst_format.R) void {
-        const rs1 = hart_ptr.getXRegister(.unsigned, inst.rs1);
-        const rs2 = hart_ptr.getXRegister(.unsigned, inst.rs2);
-        hart_ptr.setXRegister(inst.rd, rs1 | rs2);
+        const src1 = hart_ptr.getXRegister(inst.rs1).unsigned;
+        const src2 = hart_ptr.getXRegister(inst.rs2).unsigned;
+        const res = .{ .unsigned = src1 | src2 };
+        hart_ptr.setXRegister(inst.rd, res);
     }
 };
 
-/// XOR
+/// eXclusive OR
 ///
 /// `rd` = `rs1` ^ `rs2`
 pub const XOR = struct {
@@ -372,9 +392,10 @@ pub const XOR = struct {
     pub const ID = .{ opcode.OP, funct3.XOR, 0b000_0000 };
 
     pub fn execute(hart_ptr: anytype, inst: inst_format.R) void {
-        const rs1 = hart_ptr.getXRegister(.unsigned, inst.rs1);
-        const rs2 = hart_ptr.getXRegister(.unsigned, inst.rs2);
-        hart_ptr.setXRegister(inst.rd, rs1 ^ rs2);
+        const src1 = hart_ptr.getXRegister(inst.rs1).unsigned;
+        const src2 = hart_ptr.getXRegister(inst.rs2).unsigned;
+        const res = .{ .unsigned = src1 ^ src2 };
+        hart_ptr.setXRegister(inst.rd, res);
     }
 };
 
@@ -387,9 +408,10 @@ pub const SLL = struct {
     pub const ID = .{ opcode.OP, funct3.SLL, 0b000_0000 };
 
     pub fn execute(hart_ptr: anytype, inst: inst_format.R) void {
-        const rs1 = hart_ptr.getXRegister(.unsigned, inst.rs1);
-        const rs2: u5 = @truncate(hart_ptr.getXRegister(.unsigned, inst.rs2));
-        hart_ptr.setXRegister(inst.rd, rs1 << rs2);
+        const src1 = hart_ptr.getXRegister(inst.rs1).unsigned;
+        const src2 = hart_ptr.getXRegister(inst.rs2).truncated(5).unsigned;
+        const res = .{ .unsigned = src1 << src2 };
+        hart_ptr.setXRegister(inst.rd, res);
     }
 };
 
@@ -402,9 +424,10 @@ pub const SRL = struct {
     pub const ID = .{ opcode.OP, funct3.SRL, 0b000_0000 };
 
     pub fn execute(hart_ptr: anytype, inst: inst_format.R) void {
-        const rs1 = hart_ptr.getXRegister(.unsigned, inst.rs1);
-        const rs2: u5 = @truncate(hart_ptr.getXRegister(.unsigned, inst.rs2));
-        hart_ptr.setXRegister(inst.rd, rs1 >> rs2);
+        const src1 = hart_ptr.getXRegister(inst.rs1).unsigned;
+        const src2 = hart_ptr.getXRegister(inst.rs2).truncated(5).unsigned;
+        const res = .{ .unsigned = src1 >> src2 };
+        hart_ptr.setXRegister(inst.rd, res);
     }
 };
 
@@ -417,9 +440,10 @@ pub const SUB = struct {
     pub const ID = .{ opcode.OP, funct3.SUB, 0b000_0010 };
 
     pub fn execute(hart_ptr: anytype, inst: inst_format.R) void {
-        const rs1 = hart_ptr.getXRegister(.signed, inst.rs1);
-        const rs2 = hart_ptr.getXRegister(.signed, inst.rs2);
-        hart_ptr.setXRegister(inst.rd, rs1 -% rs2);
+        const src1 = hart_ptr.getXRegister(inst.rs1).unsigned;
+        const src2 = hart_ptr.getXRegister(inst.rs2).unsigned;
+        const res = .{ .unsigned = src1 -% src2 };
+        hart_ptr.setXRegister(inst.rd, res);
     }
 };
 
@@ -432,9 +456,10 @@ pub const SRA = struct {
     pub const ID = .{ opcode.OP, funct3.SRA, 0b000_0010 };
 
     pub fn execute(hart_ptr: anytype, inst: inst_format.R) void {
-        const rs1 = hart_ptr.getXRegister(.signed, inst.rs1);
-        const rs2: u5 = @truncate(hart_ptr.getXRegister(.unsigned, inst.rs2));
-        hart_ptr.setXRegister(inst.rd, rs1 >> rs2);
+        const src1 = hart_ptr.getXRegister(inst.rs1).signed;
+        const src2 = hart_ptr.getXRegister(inst.rs2).truncated(5).unsigned;
+        const res = .{ .signed = src1 >> src2 };
+        hart_ptr.setXRegister(inst.rd, res);
     }
 };
 
@@ -454,15 +479,15 @@ pub const JAL = struct {
     pub const ID = .{ opcode.JAL };
 
     pub fn execute(hart_ptr: anytype, inst: inst_format.J) JumpError!void {
+        const arch = hart_arch(@TypeOf(hart_ptr.*));
+        const imm = inst.getImmediate().signExtended(arch.XLEN).unsigned;
         const pc = hart_ptr.getPc();
-        const imm: Int(.signed, @TypeOf(hart_ptr.*).XLEN) = inst.getImmediate();
-        const pc_set = pc +% @as(Int(.unsigned, @TypeOf(hart_ptr.*).XLEN), @bitCast(imm));
-        // todo is bit checking faster? if so update JALR and all branch instructions
-        if (@TypeOf(hart_ptr.*).IALIGN != 16 and pc_set % 4 != 0) {
+        const pc_set = pc +% imm;
+        if (arch.IALIGN != 16 and pc_set % 4 != 0) {
             return error.InstructionAddressMisaligned;
         } else {
             // todo not sure if this should happen irregardless of the above exception
-            hart_ptr.setXRegister(inst.rd, pc +% 4);
+            hart_ptr.setXRegister(inst.rd, .{ .unsigned = pc +% 4 });
             hart_ptr.setPc(pc_set);
         }
     }
@@ -479,16 +504,16 @@ pub const JALR = struct {
     pub const ID = .{ opcode.JALR, 0 };
 
     pub fn execute(hart_ptr: anytype, inst: inst_format.I) JumpError!void {
+        const arch = hart_arch(@TypeOf(hart_ptr.*));
+        const src = hart_ptr.getXRegister(inst.rs1).signed;
+        const imm = inst.getImmediate().signExtended(arch.XLEN).signed;
         const pc = hart_ptr.getPc();
-        const rs1 = hart_ptr.getXRegister(.signed, inst.rs1);
-        const imm = inst.getImmediate();
-        // todo not sure if 0b10 is sign extended in the coercion
-        const pc_set: Int(.unsigned, @TypeOf(hart_ptr.*).XLEN) = @bitCast((rs1 +% imm) & 0b10);
+        const pc_set: arch.usize = @bitCast((src +% imm) & 0b10);
         if (@TypeOf(hart_ptr.*).IALIGN != 16 and pc_set % 4 != 0) {
             return error.InstructionAddressMisaligned;
         } else {
             // todo not sure if this should happen irregardless of the above exception
-            hart_ptr.setXRegister(inst.rd, pc +% 4);
+            hart_ptr.setXRegister(inst.rd, .{ .unsigned = pc +% 4 });
             hart_ptr.setPc(pc_set);
         }
     }
@@ -496,18 +521,48 @@ pub const JALR = struct {
     test {
         var hart = SimpleHart(32, mmu.BasicMmu(32)){ .mmu = .{} };
         var inst: inst_format.I = @bitCast(@as(u32, 0));
-        inst.setImmediate(0);
+        inst.setImmediate(.{ .unsigned = 0 });
         try JALR.execute(&hart, inst);
-        inst.setImmediate(1); // lowest bit cleared
+        inst.setImmediate(.{ .unsigned = 1 }); // lowest bit cleared
         try JALR.execute(&hart, inst);
-        inst.setImmediate(2);
+        inst.setImmediate(.{ .unsigned = 2 });
         try expectError(error.InstructionAddressMisaligned, JALR.execute(&hart, inst));
-        inst.setImmediate(3);
+        inst.setImmediate(.{ .unsigned = 3 });
         try expectError(error.InstructionAddressMisaligned, JALR.execute(&hart, inst));
     }
 };
 
-/// Branch if Equal
+inline fn branch_execute(hart_ptr: anytype, inst: inst_format.B, comptime signedness: Signedness, comptime compare: std.math.CompareOperator) JumpError!void {
+    const arch = hart_arch(@TypeOf(hart_ptr.*));
+    const src1 = switch(signedness) {
+        .signed => hart_ptr.getXRegister(inst.rs1).signed,
+        .unsigned => hart_ptr.getXRegister(inst.rs1).unsigned
+    };
+    const src2 = switch(signedness) {
+        .signed => hart_ptr.getXRegister(inst.rs2).signed,
+        .unsigned => hart_ptr.getXRegister(inst.rs2).unsigned
+    };
+    const condition = switch (compare) {
+        .lt =>  src1 <  src2,
+        .lte => src1 <= src2,
+        .eq =>  src1 == src2,
+        .gte => src1 >= src2,
+        .gt =>  src1 >  src2,
+        .neq => src1 != src2
+    };
+    if (condition) {
+        const pc = hart_ptr.getPc();
+        const imm = inst.getImmediate().signExtended(arch.XLEN).unsigned;
+        const pc_set = pc +% imm;
+        if (arch.IALIGN != 16 and pc_set % 4 != 0) {
+            return error.InstructionAddressMisaligned;
+        } else {
+            hart_ptr.setPc(pc_set);
+        }
+    }
+}
+
+/// Branch if EQual
 ///
 /// if (`rs1` == `rs2`) `pc` = `pc` +% `imm` // pc is unsigned, imm is sign extended to XLEN, then treated as unsigned
 /// Can raise the `InstructionAddressMisaligned` exception if execution attempts
@@ -518,22 +573,11 @@ pub const BEQ = struct {
     pub const ID = .{ opcode.BRANCH, funct3.BEQ };
 
     pub fn execute(hart_ptr: anytype, inst: inst_format.B) JumpError!void {
-        const rs1 = hart_ptr.getXRegister(.signed, inst.rs1);
-        const rs2 = hart_ptr.getXRegister(.signed, inst.rs2);
-        const pc = hart_ptr.getPc();
-        const imm: Int(.signed, @TypeOf(hart_ptr.*).XLEN) = inst.getImmediate();
-        if (rs1 == rs2) {
-            const pc_set = pc +% @as(Int(.unsigned, @TypeOf(hart_ptr.*).XLEN), @bitCast(imm));
-            if (@TypeOf(hart_ptr.*).IALIGN != 16 and pc_set % 4 != 0) {
-                return error.InstructionAddressMisaligned;
-            } else {
-                hart_ptr.setPc(pc_set);
-            }
-        }
+        return branch_execute(hart_ptr, inst, .signed, .eq);
     }
 };
 
-/// Branch if Not Equal
+/// Branch if Not eQual
 ///
 /// if (`rs1` != `rs2`) `pc` = `pc` +% `imm` // pc is unsigned, imm is sign extended to XLEN, then treated as unsigned
 /// Can raise the `InstructionAddressMisaligned` exception if execution attempts
@@ -544,18 +588,7 @@ pub const BNQ = struct {
     pub const ID = .{ opcode.BRANCH, funct3.BNE };
 
     pub fn execute(hart_ptr: anytype, inst: inst_format.B) JumpError!void {
-        const rs1 = hart_ptr.getXRegister(.signed, inst.rs1);
-        const rs2 = hart_ptr.getXRegister(.signed, inst.rs2);
-        const pc = hart_ptr.getPc();
-        const imm: Int(.signed, @TypeOf(hart_ptr.*).XLEN) = inst.getImmediate();
-        if (rs1 != rs2) {
-            const pc_set = pc +% @as(Int(.unsigned, @TypeOf(hart_ptr.*).XLEN), @bitCast(imm));
-            if (@TypeOf(hart_ptr.*).IALIGN != 16 and pc_set % 4 != 0) {
-                return error.InstructionAddressMisaligned;
-            } else {
-                hart_ptr.setPc(pc_set);
-            }
-        }
+        return branch_execute(hart_ptr, inst, .signed, .neq);
     }
 };
 
@@ -571,18 +604,7 @@ pub const BLT = struct {
     pub const ID = .{ opcode.BRANCH, funct3.BLT };
 
     pub fn execute(hart_ptr: anytype, inst: inst_format.B) JumpError!void {
-        const rs1 = hart_ptr.getXRegister(.signed, inst.rs1);
-        const rs2 = hart_ptr.getXRegister(.signed, inst.rs2);
-        const pc = hart_ptr.getPc();
-        const imm: Int(.signed, @TypeOf(hart_ptr.*).XLEN) = inst.getImmediate();
-        if (rs1 < rs2) {
-            const pc_set = pc +% @as(Int(.unsigned, @TypeOf(hart_ptr.*).XLEN), @bitCast(imm));
-            if (@TypeOf(hart_ptr.*).IALIGN != 16 and pc_set % 4 != 0) {
-                return error.InstructionAddressMisaligned;
-            } else {
-                hart_ptr.setPc(pc_set);
-            }
-        }
+        return branch_execute(hart_ptr, inst, .signed, .lt);
     }
 };
 
@@ -598,18 +620,7 @@ pub const BLTU = struct {
     pub const ID = .{ opcode.BRANCH, funct3.BLTU };
 
     pub fn execute(hart_ptr: anytype, inst: inst_format.B) JumpError!void {
-        const rs1 = hart_ptr.getXRegister(.unsigned, inst.rs1);
-        const rs2 = hart_ptr.getXRegister(.unsigned, inst.rs2);
-        const pc = hart_ptr.getPc();
-        const imm: Int(.signed, @TypeOf(hart_ptr.*).XLEN) = inst.getImmediate();
-        if (rs1 < rs2) {
-            const pc_set = pc +% @as(Int(.unsigned, @TypeOf(hart_ptr.*).XLEN), @bitCast(imm));
-            if (@TypeOf(hart_ptr.*).IALIGN != 16 and pc_set % 4 != 0) {
-                return error.InstructionAddressMisaligned;
-            } else {
-                hart_ptr.setPc(pc_set);
-            }
-        }
+        return branch_execute(hart_ptr, inst, .unsigned, .lt);
     }
 };
 
@@ -625,18 +636,7 @@ pub const BGE = struct {
     pub const ID = .{ opcode.BRANCH, funct3.BGE };
 
     pub fn execute(hart_ptr: anytype, inst: inst_format.B) JumpError!void {
-        const rs1 = hart_ptr.getXRegister(.signed, inst.rs1);
-        const rs2 = hart_ptr.getXRegister(.signed, inst.rs2);
-        const pc = hart_ptr.getPc();
-        const imm: Int(.signed, @TypeOf(hart_ptr.*).XLEN) = inst.getImmediate();
-        if (rs1 >= rs2) {
-            const pc_set = pc +% @as(Int(.unsigned, @TypeOf(hart_ptr.*).XLEN), @bitCast(imm));
-            if (@TypeOf(hart_ptr.*).IALIGN != 16 and pc_set % 4 != 0) {
-                return error.InstructionAddressMisaligned;
-            } else {
-                hart_ptr.setPc(pc_set);
-            }
-        }
+        return branch_execute(hart_ptr, inst, .signed, .gte);
     }
 };
 
@@ -652,30 +652,21 @@ pub const BGEU = struct {
     pub const ID = .{ opcode.BRANCH, funct3.BGEU };
 
     pub fn execute(hart_ptr: anytype, inst: inst_format.B) JumpError!void {
-        const rs1 = hart_ptr.getXRegister(.unsigned, inst.rs1);
-        const rs2 = hart_ptr.getXRegister(.unsigned, inst.rs2);
-        const pc = hart_ptr.getPc();
-        const imm: Int(.signed, @TypeOf(hart_ptr.*).XLEN) = inst.getImmediate();
-        if (rs1 >= rs2) {
-            const pc_set = pc +% @as(Int(.unsigned, @TypeOf(hart_ptr.*).XLEN), @bitCast(imm));
-            if (@TypeOf(hart_ptr.*).IALIGN != 16 and pc_set % 4 != 0) {
-                return error.InstructionAddressMisaligned;
-            } else {
-                hart_ptr.setPc(pc_set);
-            }
-        }
+        return branch_execute(hart_ptr, inst, .unsigned, .gte);
     }
 };
 
 inline fn load_execute(hart_ptr: anytype, inst: inst_format.I, comptime width: MemoryValueWidth, comptime signedness: Signedness) mmu.LoadError!void {
-    const rs1 = hart_ptr.getXRegister(.signed, inst.rs1);
-    const XLEN = @TypeOf(hart_ptr.*).XLEN;
-    const Isize = Int(.signed, XLEN);
-    // todo why did I put Isize here, run 64 bit and verify if this is needed in any instructions
-    const imm: Isize = inst.getImmediate();
-    const addr = rs1 +% imm;
-    const value: Int(signedness, @intFromEnum(width) * 8) = @bitCast(try hart_ptr.load(width, @bitCast(addr)));
-    hart_ptr.setXRegister(inst.rd, @as(Int(signedness, XLEN), value));
+    const arch = hart_arch(@TypeOf(hart_ptr.*));
+    const base = hart_ptr.getXRegister(inst.rs1).unsigned;
+    const imm = inst.getImmediate().signExtended(arch.XLEN).unsigned;
+    const addr = base +% imm;
+    const data = try hart_ptr.load(width, addr);
+    const res = switch (signedness) {
+        .signed => data.signExtended(arch.XLEN),
+        .unsigned => data.zeroExtended(arch.XLEN)
+    };
+    hart_ptr.setXRegister(inst.rd, res);
 }
 
 /// Load Byte (8 bits)
@@ -744,14 +735,12 @@ pub const LHU = struct {
 };
 
 inline fn store_execute(hart_ptr: anytype, inst: inst_format.S, comptime width: MemoryValueWidth) mmu.StoreError!void {
-    const rs1 = hart_ptr.getXRegister(.signed, inst.rs1);
-    const Isize = Int(.signed, @TypeOf(hart_ptr.*).XLEN);
-    // todo why did I put Isize here
-    const imm: Isize = inst.getImmediate();
-    const addr = rs1 +% imm;
-    const rs2 = hart_ptr.getXRegister(.unsigned, inst.rs2);
-    std.debug.print("copying {} (reg {}) to mem[{}(reg {}) +% {}]\n", .{ rs2, inst.rs2, rs1, inst.rs1, imm });
-    try hart_ptr.store(width, @bitCast(addr), @as(width.Unsigned(), @truncate(rs2)));
+    const arch = hart_arch(@TypeOf(hart_ptr.*));
+    const base = hart_ptr.getXRegister(inst.rs1).unsigned;
+    const imm = inst.getImmediate().signExtended(arch.XLEN).unsigned;
+    const addr = base +% imm;
+    const src = hart_ptr.getXRegister(inst.rs2).truncated(width.bits());
+    try hart_ptr.store(width, addr, src);
 }
 
 /// Store Byte (8 bits)

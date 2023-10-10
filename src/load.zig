@@ -28,10 +28,10 @@ pub fn elf(hart_ptr: anytype, file: anytype) !void {
                     // todo should probably try loading more of the file at once
                     var data: u8 = undefined;
                     try file.reader().readNoEof(std.mem.asBytes(&data));
-                    try hart_ptr.store(.byte, @intCast(program_header.p_vaddr + offset), data);
+                    try hart_ptr.store(.byte, @intCast(program_header.p_vaddr + offset), .{ .unsigned = data });
                 }
                 for (program_header.p_filesz..program_header.p_memsz) |offset| {
-                    try hart_ptr.store(.byte, @intCast(program_header.p_vaddr + offset), 0);
+                    try hart_ptr.store(.byte, @intCast(program_header.p_vaddr + offset), .{ .unsigned = 0 });
                 }
                 // todo modeset Hart memory according to program header flags
                 //  program_header.p_flags & elf.PF_R != 0; // readable, same for W and X
@@ -62,12 +62,12 @@ pub fn raw(hart_ptr: anytype, reader: anytype) !void {
         // todo this forces the endianess of Hart.store to be little, likely going to add a storeBig to remedy
         if (read < data.len) {
             for (0..read) |i| {
-                try hart_ptr.store(.byte, address, data[i]);
+                try hart_ptr.store(.byte, address, .{ .unsigned = data[i] });
                 address += @sizeOf(u8);
             }
             break;
         } else {
-            try hart_ptr.store(.doubleword, address, std.mem.bytesToValue(u64, &data));
+            try hart_ptr.store(.doubleword, address, .{ .unsigned = std.mem.bytesToValue(u64, &data) });
             address += @sizeOf(u64);
         }
     }

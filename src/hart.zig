@@ -164,6 +164,16 @@ comptime {
     // todo verifyHartImplementation(SimpleHart(32, mmu.BasicMMU(32)));
 }
 
+//pub fn InstructionContext(comptime HartContext: type) type {
+//    return struct {
+//        pub const XLEN: comptime_int = HartContext.XLEN;
+//
+//        pub const getXRegister = fn(self: HartContext, rs: u5) Data(XLEN);
+//
+//        pub const setXRegister = fn(self: HartContext, rs: u5, v: Data(XLEN));
+//    };
+//}
+
 // P_XLEN would just be XLEN if the shadowing rules allowed it
 pub fn SimpleHart(comptime P_XLEN: comptime_int, comptime MMU: type) type {
     comptime {
@@ -187,8 +197,8 @@ pub fn SimpleHart(comptime P_XLEN: comptime_int, comptime MMU: type) type {
 
         /// Program Counter
         pc: Int(.unsigned, XLEN) = 0,
-        // access will have 1 subtracted from it it, register 0 is hardwired as 0
-        x_registers: [31]Int(.unsigned, XLEN) = [_]Int(.unsigned, XLEN){0} ** 31,
+        // access has 1 subtracted from it it, register 0 is hardwired as 0
+        x_registers: [31]Data(XLEN) = [_]Data(XLEN){.{ .unsigned = 0 }} ** 31,
         pc_set: bool = false,
         ecall_set: bool = false,
         ebreak_set: bool = false,
@@ -325,23 +335,18 @@ pub fn SimpleHart(comptime P_XLEN: comptime_int, comptime MMU: type) type {
         };
 
         // inline candidate
-        pub fn getXRegister(self: @This(), comptime signedness: Signedness, rs: u5) Int(signedness, XLEN) {
+        pub fn getXRegister(self: @This(), rs: u5) Data(XLEN) {
             if (rs == 0) {
-                return 0;
+                return .{ .unsigned = 0 };
             } else {
-                return @bitCast(self.x_registers[rs - 1]);
+                return self.x_registers[rs - 1];
             }
         }
 
         // inline candidate
-        pub fn setXRegister(self: *@This(), rd: u5, v: anytype) void {
-            if (@bitSizeOf(@TypeOf(v)) != XLEN) {
-                // todo will not compile without this, however this seems to also never be executed, should be fixed
-                //  once I swap register values over to a signednessless type
-                @panic("not ok");
-            }
+        pub fn setXRegister(self: *@This(), rd: u5, v: Data(XLEN)) void {
             if (rd != 0) {
-                self.x_registers[rd - 1] = @bitCast(v);
+                self.x_registers[rd - 1] = v;
             }
         }
 
@@ -358,11 +363,11 @@ pub fn SimpleHart(comptime P_XLEN: comptime_int, comptime MMU: type) type {
             self.pc = v;
         }
 
-        pub fn load(self: *@This(), comptime width: MemoryValueWidth, address: Int(.unsigned, XLEN)) mmu.LoadError!width.Unsigned() {
+        pub fn load(self: *@This(), comptime width: MemoryValueWidth, address: Int(.unsigned, XLEN)) mmu.LoadError!width.Data() {
             return self.mmu.load(width, address);
         }
 
-        pub fn store(self: *@This(), comptime width: MemoryValueWidth, address: Int(.unsigned, XLEN), data: width.Unsigned()) mmu.StoreError!void {
+        pub fn store(self: *@This(), comptime width: MemoryValueWidth, address: Int(.unsigned, XLEN), data: width.Data()) mmu.StoreError!void {
             return self.mmu.store(width, address, data);
         }
 

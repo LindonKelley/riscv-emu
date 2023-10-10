@@ -4,6 +4,7 @@ const assert = std.debug.assert;
 const expect = std.testing.expect;
 const Signedness = std.builtin.Signedness;
 const Int = std.meta.Int;
+const Data = @import("data.zig").Data;
 
 // all instruction formats must be safely bit castable to an integer of
 // equal length, in the case of the base instruction set, that is 32, in the
@@ -131,43 +132,29 @@ pub const ENV = packed struct {
 };
 
 const helpers = struct {
-    /// sign extended immediate
-    // this actually should return Hart.SXI, but i32 is the smallest value
-    // SXI could hold, and Zig coercion will deal with it appropriately.
-    // on the performance side of casting `i?` -> `i32` -> `i64`, I'm hoping
-    // Zig will notice the double cast and cut out the middle.
-    // logically this should just be returned as raw data
-    // (or equivelent to Hart.getRegisterValue this could receive signedness as a parameter),
-    // however, the vast majority of uses of immediates in the RISC-V instructions are signed
-    inline fn getImmediate(format_ptr: anytype) i32 {
+    inline fn getImmediate(format_ptr: anytype) Data(@bitSizeOf(@TypeOf(format_ptr.*).Conversion)) {
         const Conversion = @TypeOf(format_ptr.*).Conversion;
         var conv: Conversion = undefined;
         // in formats B, U, and J this is actually appropriate, in I and S the below will overwrite it anyway
         conv.imm0 = 0;
         structCopyFields(&conv, format_ptr.*);
-        const imm: SignedRepr(Conversion) = @bitCast(conv);
-        return @intCast(imm);
+        return .{ .unsigned = @bitCast(conv) };
     }
 
     // some instruction formats ignore some number of lower bits,
-    // in those cases the aforemention lower bits of the `imm`
-    // arg are silently ignored
-    inline fn setImmediate(format: anytype, imm: SignedRepr(@TypeOf(format.*).Conversion)) void {
-        const conv: @TypeOf(format.*).Conversion = @bitCast(imm);
-        structCopyFields(format, conv);
+    // in those cases the aforementioned lower bits of the given `imm`
+    // argument are silently ignored
+    inline fn setImmediate(format_ptr: anytype, imm: Data(@bitSizeOf(@TypeOf(format_ptr.*).Conversion))) void {
+        const conv: @TypeOf(format_ptr.*).Conversion = @bitCast(imm);
+        structCopyFields(format_ptr, conv);
     }
 
-    // dst is a pointer, src is not
-    inline fn structCopyFields(dst: anytype, src: anytype) void {
-        inline for (@typeInfo(@TypeOf(dst.*)).Struct.fields) |field| {
+    inline fn structCopyFields(dst_ptr: anytype, src: anytype) void {
+        inline for (@typeInfo(@TypeOf(dst_ptr.*)).Struct.fields) |field| {
             if (@hasField(@TypeOf(src), field.name)) {
-                @field(dst, field.name) = @field(src, field.name);
+                @field(dst_ptr, field.name) = @field(src, field.name);
             }
         }
-    }
-
-    fn SignedRepr(comptime T: type) type {
-        return Int(.signed, @bitSizeOf(T));
     }
 };
 

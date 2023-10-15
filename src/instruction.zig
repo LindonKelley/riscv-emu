@@ -1,4 +1,4 @@
-/// RISC-V instructions, all integers are signed unless otherwise specified, a Word is 32 bits.
+/// RISC-V instructions, a Word is 32 bits.
 
 const std = @import("std");
 const opcode = @import("opcode.zig");
@@ -77,13 +77,11 @@ pub const funct12 = struct {
     pub const EBREAK: u12 = 0b0000_0000_0001;
 };
 
-// todo switch docs to using x[`rs1`] instead of `rs1`
 // todo switch to types as values instead of unnecesarily inlining comptime calls
-// todo use hart_arch instead of const XLEN, Usize, Isize
 
 /// ADD Immediate
 ///
-/// `rd` = `rs1` +% `imm`
+/// x[`rd`] = x[`rs1`] +% signExtend(`imm`)
 /// `ADDI rd, rs1, 0` is used to implement the `MV rd, rs1` psuedoinstruction
 /// `ADDI 0, 0, 0` is used to encode `NOP`
 pub const ADDI = struct {
@@ -139,7 +137,7 @@ pub const ADDI = struct {
 
 /// Set Less Than Immediate
 ///
-/// `rd` = if (`rs1` < `imm`) 1 else 0
+/// x[`rd`] = if (x[`rs1`] < signExtend(`imm`)) 1 else 0
 pub const SLTI = struct {
     pub const Ext = .{ 32, ext.I };
 
@@ -156,7 +154,7 @@ pub const SLTI = struct {
 
 /// Set Less Than Immediate Unsigned
 ///
-/// `rd` = if (`rs1` < `imm`) 1 else 0 // all unsigned; imm is sign extended to XLEN, then treated as unsigned
+/// x[`rd`] = if (x[`rs1`] (unsigned)< signExtend(`imm`)) 1 else 0
 pub const SLTIU = struct {
     pub const Ext = .{ 32, ext.I };
 
@@ -173,7 +171,7 @@ pub const SLTIU = struct {
 
 /// AND Immediate
 ///
-/// `rd` = `rs1` & `imm`
+/// x[`rd`] = x[`rs1`] & signExtend(`imm`)
 pub const ANDI = struct {
     pub const Ext = .{ 32, ext.I };
 
@@ -190,7 +188,7 @@ pub const ANDI = struct {
 
 /// OR Immediate
 ///
-/// `rd` = `rs1` | `imm`
+/// x[`rd`] = x[`rs1`] | signExtend(`imm`)
 pub const ORI = struct {
     pub const Ext = .{ 32, ext.I };
 
@@ -207,7 +205,7 @@ pub const ORI = struct {
 
 /// eXclusive OR Immediate
 ///
-/// `rd` = `rs1` ^ `imm`
+/// x[`rd`] = x[`rs1`] ^ signExtend(`imm`)
 /// `XORI rd, rs1, -1` is equivelent to psuedoinstruction `NOT rd, rs1`
 pub const XORI = struct {
     pub const Ext = .{ 32, ext.I };
@@ -225,7 +223,7 @@ pub const XORI = struct {
 
 /// Shift Left Logical Immediate
 ///
-/// `rd` = `rs1` << `shamt` // all unsigned
+/// x[`rd`] = x[`rs1`] << `shamt`
 pub const SLLI = struct {
     pub const Ext = .{ 32, ext.I };
 
@@ -240,7 +238,7 @@ pub const SLLI = struct {
 
 /// Shift Right Logical Immediate
 ///
-/// `rd` = `rs1` >> `shamt` // all unsigned
+/// x[`rd`] = x[`rs1`] (unsigned)>> `shamt`
 pub const SRLI = struct {
     pub const Ext = .{ 32, ext.I };
 
@@ -255,7 +253,7 @@ pub const SRLI = struct {
 
 /// Shift Right Arithmetic Immediate
 ///
-/// `rd` = `rs1` >> `shamt` // shamt unsigned
+/// x[`rd`] = x[`rs1`] (signed)>> `shamt`
 pub const SRAI = struct {
     pub const Ext = .{ 32, ext.I };
 
@@ -270,7 +268,7 @@ pub const SRAI = struct {
 
 /// Load Upper Immediate
 ///
-/// `rd` = `imm` << 20 // all unsigned
+/// x[`rd`] = signExtend(`imm` << 12)
 pub const LUI = struct {
     pub const Ext = .{ 32, ext.I };
 
@@ -285,7 +283,7 @@ pub const LUI = struct {
 
 /// Add Upper Immediate to `PC`
 ///
-/// `rd` = `pc` + `imm` << 20 // all unsigned
+/// x[`rd`] = `pc` + signExtend(`imm` << 12)
 pub const AUIPC = struct {
     pub const Ext = .{ 32, ext.I };
 
@@ -301,7 +299,7 @@ pub const AUIPC = struct {
 
 /// ADD
 ///
-/// `rd` = `rs1` +% `rs2`
+/// x[`rd`] = x[`rs1`] +% x[`rs2`]
 pub const ADD = struct {
     pub const Ext = .{ 32, ext.I };
 
@@ -318,7 +316,7 @@ pub const ADD = struct {
 
 /// Set Less Than
 ///
-/// `rd` = if (`rs1` < `rs2`) 1 else 0
+/// x[`rd`] = if (x[`rs1`] (signed)< x[`rs2`]) 1 else 0
 pub const SLT = struct {
     pub const Ext = .{ 32, ext.I };
 
@@ -335,7 +333,7 @@ pub const SLT = struct {
 
 /// Set Less Than Unsigned
 ///
-/// `rd` = if (`rs1` < `rs2`) 1 else 0 // all unsigned
+/// x[`rd`] = if (x[`rs1`] (unsigned)< x[`rs2`]) 1 else 0
 /// `SLTU rd, x0, rs1` is equivalent to psuedoinstruction `SNEZ rd, rs`
 pub const SLTU = struct {
     pub const Ext = .{ 32, ext.I };
@@ -353,7 +351,7 @@ pub const SLTU = struct {
 
 /// AND
 ///
-/// `rd` = `rs1` & `rs2`
+/// x[`rd`] = x[`rs1`] & x[`rs2`]
 pub const AND = struct {
     pub const Ext = .{ 32, ext.I };
 
@@ -369,7 +367,7 @@ pub const AND = struct {
 
 /// OR
 ///
-/// `rd` = `rs1` | `rs2`
+/// x[`rd`] = x[`rs1`] | x[`rs2`]
 pub const OR = struct {
     pub const Ext = .{ 32, ext.I };
 
@@ -385,7 +383,7 @@ pub const OR = struct {
 
 /// eXclusive OR
 ///
-/// `rd` = `rs1` ^ `rs2`
+/// x[`rd`] = x[`rs1`] ^ x[`rs2`]
 pub const XOR = struct {
     pub const Ext = .{ 32, ext.I };
 
@@ -401,7 +399,7 @@ pub const XOR = struct {
 
 /// Shift Left Logical
 ///
-/// `rd` = `rs1` << `rs2` & 0b1_1111 // all unsigned
+/// x[`rd`] = x[`rs1`] << (x[`rs2`] & 0b1_1111)
 pub const SLL = struct {
     pub const Ext = .{ 32, ext.I };
 
@@ -417,7 +415,7 @@ pub const SLL = struct {
 
 /// Shift Right Logical
 ///
-/// `rd` = `rs1` >> `rs2` & 0b1_1111 // all unsigned
+/// x[`rd`] = x[`rs1`] (unsigned)>> (x[`rs2`] & 0b1_1111)
 pub const SRL = struct {
     pub const Ext = .{ 32, ext.I };
 
@@ -433,7 +431,7 @@ pub const SRL = struct {
 
 /// SUB
 ///
-/// `rd` = `rs1` -% `rs2`
+/// x[`rd`] = x[`rs1`] -% x[`rs2`]
 pub const SUB = struct {
     pub const Ext = .{ 32, ext.I };
 
@@ -449,7 +447,7 @@ pub const SUB = struct {
 
 /// Shift Right Arithmetic
 ///
-/// `rd` = `rs1` >> `rs2` & 0b1_1111 // rs2 is unsigned
+/// x[`rd`] = x[`rs1`] (signed)>> (x[`rs2`] & 0b1_1111)
 pub const SRA = struct {
     pub const Ext = .{ 32, ext.I };
 
@@ -469,7 +467,7 @@ pub const JumpError = error {
 
 /// Jump And Link
 ///
-/// `rd` = `pc` +% 4; `pc` = `pc` +% `imm` // pc is unsigned, imm is sign extended to XLEN, then treated as unsigned
+/// x[`rd`] = `pc` +% 4; `pc` +%= signExtend(`imm`)
 /// `JAL x0, [whatever] is equivalent to psuedoinstruction `J [whatever]` (plain unconditional jump)
 /// Can raise the `InstructionAddressMisaligned` exception if execution attempts
 /// to set PC to an invalid address however, this is not possible when C-extension is enabled.
@@ -495,7 +493,7 @@ pub const JAL = struct {
 
 /// Jump And Link Register
 ///
-/// `rd` = `pc` +% 4; `pc` = @bitCast((`rs1` +% `imm`) & 0b10) // pc is unsigned, 0b10 must be sign extended
+/// x[`rd`] = `pc` +% 4; `pc` = (x[`rs1`] +% signExtend(`imm`)) & signExtend(0b10)
 /// Can raise the `InstructionAddressMisaligned` exception if execution attempts
 /// to set PC to an invalid address however, this is not possible when C-extension is enabled.
 pub const JALR = struct {
@@ -564,7 +562,7 @@ inline fn branch_execute(hart_ptr: anytype, inst: inst_format.B, comptime signed
 
 /// Branch if EQual
 ///
-/// if (`rs1` == `rs2`) `pc` = `pc` +% `imm` // pc is unsigned, imm is sign extended to XLEN, then treated as unsigned
+/// if (x[`rs1`] == x[`rs2`]) `pc` +%= signExtend(`imm`)
 /// Can raise the `InstructionAddressMisaligned` exception if execution attempts
 /// to set PC to an invalid address, however, this is not possible when C-extension is enabled.
 pub const BEQ = struct {
@@ -579,7 +577,7 @@ pub const BEQ = struct {
 
 /// Branch if Not eQual
 ///
-/// if (`rs1` != `rs2`) `pc` = `pc` +% `imm` // pc is unsigned, imm is sign extended to XLEN, then treated as unsigned
+/// if (x[`rs1`] != x[`rs2`]) `pc` +%= signExtend(`imm`)
 /// Can raise the `InstructionAddressMisaligned` exception if execution attempts
 /// to set PC to an invalid address, however, this is not possible when C-extension is enabled.
 pub const BNQ = struct {
@@ -594,7 +592,7 @@ pub const BNQ = struct {
 
 /// Branch if Less Than
 ///
-/// if (`rs1` < `rs2`) `pc` = `pc` +% `imm` // pc is unsigned, imm is sign extended to XLEN, then treated as unsigned
+/// if (x[`rs1`] (signed)< x[`rs2`]) `pc` +%= signExtend(`imm`)
 /// Can raise the `InstructionAddressMisaligned` exception if execution attempts
 /// to set PC to an invalid address, however, this is not possible when C-extension is enabled.
 /// psuedoinstruction `BGT` can be implemented by flipping `rs1` and `rs2`
@@ -610,7 +608,7 @@ pub const BLT = struct {
 
 /// Branch if Less Than Unsigned
 ///
-/// if (`rs1` < `rs2`) `pc` = `pc` +% `imm` // all unsigned; imm is sign extended to XLEN, then treated as unsigned
+/// if (x[`rs1`] (unsigned)< x[`rs2`]) `pc` +%= `imm`
 /// Can raise the `InstructionAddressMisaligned` exception if execution attempts
 /// to set PC to an invalid address, however, this is not possible when C-extension is enabled.
 /// psuedoinstruction `BGTU` can be implemented by flipping `rs1` and `rs2`
@@ -626,7 +624,7 @@ pub const BLTU = struct {
 
 /// Branch if Greater or Equal
 ///
-/// if (`rs1` >= `rs2`) `pc` = `pc` +% `imm` // pc is unsigned, imm is sign extended to XLEN, then treated as unsigned
+/// if (x[`rs1`] (signed)>= x[`rs2`]) `pc` +%= `imm`
 /// Can raise the `InstructionAddressMisaligned` exception if execution attempts
 /// to set PC to an invalid address, however, this is not possible when C-extension is enabled.
 /// psuedoinstruction `BLE` can be implemented by flipping `rs1` and `rs2`
@@ -642,7 +640,7 @@ pub const BGE = struct {
 
 /// Branch if Greater or Equal Unsigned
 ///
-/// if (`rs1` >= `rs2`) `pc` = `pc` +% `imm` // all unsigned; imm is sign extended to XLEN, then treated as unsigned
+/// if (x[`rs1`] (unsigned)>= x[`rs2`]) `pc` +%= `imm`
 /// Can raise the `InstructionAddressMisaligned` exception if execution attempts
 /// to set PC to an invalid address, however, this is not possible when C-extension is enabled.
 /// psuedoinstruction `BLEU` can be implemented by flipping `rs1` and `rs2`
@@ -671,7 +669,7 @@ inline fn load_execute(hart_ptr: anytype, inst: inst_format.I, comptime width: M
 
 /// Load Byte (8 bits)
 ///
-/// `rd` = mem[`rs1` +% `imm`]
+/// x[`rd`] = signExtend(mem.load(8, x[`rs1`] +% signExtend(`imm`)))
 pub const LB = struct {
     pub const Ext = .{ 32, ext.I };
 
@@ -684,7 +682,7 @@ pub const LB = struct {
 
 /// Load Halfword (16 bits)
 ///
-/// `rd` = mem[`rs1` +% `imm`]
+/// x[`rd`] = signExtend(mem.load(16, x[`rs1`] +% signExtend(`imm`)))
 pub const LH = struct {
     pub const Ext = .{ 32, ext.I };
 
@@ -697,7 +695,7 @@ pub const LH = struct {
 
 /// Load Word (32 bits)
 ///
-/// `rd` = mem[`rs1` +% `imm`]
+/// x[`rd`] = signExtend(mem.load(32, x[`rs1`] +% signExtend(`imm`)))
 pub const LW = struct {
     pub const Ext = .{ 32, ext.I };
 
@@ -710,7 +708,7 @@ pub const LW = struct {
 
 /// Load Byte Unsigned (8 bits)
 ///
-/// `rd` = mem[`rs1` +% `imm`] // the value returned by mem is unsigned
+/// x[`rd`] = mem.load(8, x[`rs1`] +% signExtend(`imm`))
 pub const LBU = struct {
     pub const Ext = .{ 32, ext.I };
 
@@ -723,7 +721,7 @@ pub const LBU = struct {
 
 /// Load Halfword Unsigned (16 bits)
 ///
-/// `rd` = mem[`rs1` +% `imm`] // the value returned by mem is unsigned
+/// x[`rd`] = mem.load(16, x[`rs1`] +% signExtend(`imm`))
 pub const LHU = struct {
     pub const Ext = .{ 32, ext.I };
 
@@ -745,7 +743,7 @@ inline fn store_execute(hart_ptr: anytype, inst: inst_format.S, comptime width: 
 
 /// Store Byte (8 bits)
 ///
-/// mem[`rs1` +% `imm`] = `rs2` // rs2 is unsigned
+/// mem[x[`rs1`] +% signExtend(`imm`)] = truncate(8, x[`rs2`])
 pub const SB = struct {
     pub const Ext = .{ 32, ext.I };
 
@@ -758,7 +756,7 @@ pub const SB = struct {
 
 /// Store Halfword (16 bits)
 ///
-/// mem[`rs1` +% `imm`] = `rs2` // rs2 is unsigned
+/// mem[x[`rs1`] +% signExtend(`imm`)] = truncate(16, x[`rs2`])
 pub const SH = struct {
     pub const Ext = .{ 32, ext.I };
 
@@ -771,7 +769,7 @@ pub const SH = struct {
 
 /// Store Word (32 bits)
 ///
-/// mem[`rs1` +% `imm`] = `rs2` // rs2 is unsigned
+/// mem[x[`rs1`] +% signExtend(`imm`)] = truncate(32, x[`rs2`])
 pub const SW = struct {
     pub const Ext = .{ 32, ext.I };
 

@@ -161,21 +161,11 @@ fn verifyHartImplDeclTypeTest(comptime Impl: type, comptime name: []const u8, co
 }
 
 comptime {
-    // todo verifyHartImplementation(SimpleHart(32, mmu.BasicMMU(32)));
+    // todo verifyHartImplementation(SimpleHart(32, mmu.BasicMmu(32)));
 }
 
-//pub fn InstructionContext(comptime HartContext: type) type {
-//    return struct {
-//        pub const XLEN: comptime_int = HartContext.XLEN;
-//
-//        pub const getXRegister = fn(self: HartContext, rs: u5) Data(XLEN);
-//
-//        pub const setXRegister = fn(self: HartContext, rs: u5, v: Data(XLEN));
-//    };
-//}
-
 // P_XLEN would just be XLEN if the shadowing rules allowed it
-pub fn SimpleHart(comptime P_XLEN: comptime_int, comptime MMU: type) type {
+pub fn SimpleHart(comptime P_XLEN: comptime_int, comptime Mmu: type) type {
     comptime {
         if (P_XLEN != 32 and P_XLEN != 64) {
             var buf: [32]u8 = undefined;
@@ -202,7 +192,7 @@ pub fn SimpleHart(comptime P_XLEN: comptime_int, comptime MMU: type) type {
         pc_set: bool = false,
         ecall_set: bool = false,
         ebreak_set: bool = false,
-        mmu: MMU,
+        mmu: Mmu,
 
         /// Completes one instruction cycle, errors returned are intended to be treated as either
         ///  invisible or fatal traps. This function assumes that requested traps only come from within the execution
@@ -210,11 +200,11 @@ pub fn SimpleHart(comptime P_XLEN: comptime_int, comptime MMU: type) type {
         ///  effects.
         pub fn tick(self: *@This()) TickError!?RequestedTrap {
             // current instruction register
-            // todo not sure about the try, in terms of if that's the correct error for a hart to return on a failed fetch
             // for when something sets these outside of instructions
             self.pc_set = false;
             self.ebreak_set = false;
             self.ecall_set = false;
+            // todo not sure about the try, in terms of if that's the correct error for a hart to return on a failed fetch
             const cir: Masking = @bitCast(try self.load(.word, self.pc));
             try self.tick_fast(cir);
             if (self.ecall_set) return .ecall;
@@ -335,7 +325,7 @@ pub fn SimpleHart(comptime P_XLEN: comptime_int, comptime MMU: type) type {
         };
 
         // inline candidate
-        pub fn getXRegister(self: @This(), rs: u5) Data(XLEN) {
+        pub fn getXRegister(self: *@This(), rs: u5) Data(XLEN) {
             if (rs == 0) {
                 return .{ .unsigned = 0 };
             } else {
@@ -353,7 +343,7 @@ pub fn SimpleHart(comptime P_XLEN: comptime_int, comptime MMU: type) type {
         // must be implemented such that an instruction can call this to get it's own location,
         // in an implementation with a pipeline, this may be more complicated than it is here,
         // the value returned must be aligned by IALIGN
-        pub fn getPc(self: @This()) Int(.unsigned, XLEN) {
+        pub fn getPc(self: *@This()) Int(.unsigned, XLEN) {
             return self.pc;
         }
 

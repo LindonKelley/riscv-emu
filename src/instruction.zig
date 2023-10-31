@@ -1,21 +1,49 @@
-/// RISC-V instructions, a Word is 32 bits.
+//! RISC-V instruction helpers
 
 const std = @import("std");
-const opcode = @import("opcode.zig");
-const inst_format = @import("inst_format.zig");
-const instruction = @import("instruction.zig");
-const expect = std.testing.expect;
-const expectError = std.testing.expectError;
-const expectEqual = std.testing.expectEqual;
-const SimpleHart = @import("hart.zig").SimpleHart;
-const Signedness = std.builtin.Signedness;
 const Int = std.meta.Int;
-const ext = @import("extension.zig");
+const inst_format = @import("inst_format.zig");
 const mmu = @import("mmu.zig");
 const MemoryValueWidth = mmu.MemoryValueWidth;
-const register = @import("register.zig");
-const assemble = @import("assemble.zig");
-const load = @import("load.zig");
+const Data = @import("data.zig").Data;
+const extension = @import("extension.zig");
+
+/// RV32G and RV64G opcodes.
+pub const opcode = struct {
+    // The opcodes are in order, with comments where there's gaps that are either
+    // reserved for future developement of the spec or for custom use.
+    // Some reserved opcodes are reserved for RV128 but can be used for
+    // custom use extensions in RV32 and RV64.
+
+    pub const LOAD: u7 =        0b00_000_11;
+    pub const LOAD_FP: u7 =     0b00_001_11;
+    // custom-0
+    pub const MISC_MEM: u7 =    0b00_011_11;
+    pub const OP_IMM: u7 =      0b00_100_11;
+    pub const AUIPC: u7 =       0b00_101_11;
+    pub const OP_IMM_32: u7 =   0b00_110_11;
+    pub const STORE: u7 =       0b01_000_11;
+    pub const STORE_FP: u7 =    0b01_001_11;
+    // custom-1
+    pub const AMO: u7 =         0b01_011_11;
+    pub const OP: u7 =          0b01_100_11;
+    pub const LUI: u7 =         0b01_101_11;
+    pub const OP_32: u7 =       0b01_110_11;
+    pub const MADD: u7 =        0b10_000_11;
+    pub const MSUB: u7 =        0b10_001_11;
+    pub const NMSUB: u7 =       0b10_010_11;
+    pub const NMADD: u7 =       0b10_011_11;
+    pub const OP_FP: u7 =       0b10_100_11;
+    // reserved
+    // custom-2/rv128
+    pub const BRANCH: u7 =      0b11_000_11;
+    pub const JALR: u7 =        0b11_001_11;
+    // reserved
+    pub const JAL: u7 =         0b11_011_11;
+    pub const SYSTEM: u7 =      0b11_100_11;
+    // reserved
+    // custom-3/rv128
+};
 
 pub const funct3 = struct {
     pub const ADDI: u3 =    0b000;
@@ -77,778 +105,142 @@ pub const funct12 = struct {
     pub const EBREAK: u12 = 0b0000_0000_0001;
 };
 
-// todo switch to types as values instead of unnecesarily inlining comptime calls
+pub fn ContextFunctions(comptime HartContext: type) type {
+    return struct {
+        pub const XLEN: comptime_int = HartContext.XLEN;
 
-/// ADD Immediate
-///
-/// x[`rd`] = x[`rs1`] +% signExtend(`imm`)
-/// `ADDI rd, rs1, 0` is used to implement the `MV rd, rs1` psuedoinstruction
-/// `ADDI 0, 0, 0` is used to encode `NOP`
-pub const ADDI = struct {
-    pub const Ext = .{ 32, ext.I };
+        getXRegister: *const fn(hart_ptr: *HartContext, rs: u5) Data(XLEN),
+        setXRegister: *const fn(hart_ptr: *HartContext, rs: u5, v: Data(XLEN)) void,
+        getPc: *const fn(self: *HartContext) Int(.unsigned, XLEN),
+        setPc: *const fn(self: *HartContext, v: Int(.unsigned, XLEN)) void,
+        // need to use a dummy and @TypeOf to get around a compiler bug: https://github.com/ziglang/zig/issues/15409
+        load: *const @TypeOf(loadDummy),
+        store: *const @TypeOf(storeDummy),
+        fence: *const fn(self: *HartContext, fm: u4, pred: FenceOperands, succ: FenceOperands) void,
+        // todo merge environment calls into one function that receives the funct12, remove inst_format.ENV and use the
+        // todo I format as specified by the RISC-V spec
+        ecall: *const fn(self: *HartContext) void,
+        ebreak: *const fn(self: *HartContext) void,
+        // fenceI: fn(self: *HartContext, inst: Data(32)) void, todo part of Zifencei
 
-    pub const ID = .{ opcode.OP_IMM, funct3.ADDI };
+        fn loadDummy(self: *HartContext, comptime width: MemoryValueWidth, address: Int(.unsigned, XLEN)) mmu.LoadError!width.Data() {
+            _ = self;
+            _ = address;
+            return 0;
+        }
 
-    pub fn execute(hart_ptr: anytype, inst: inst_format.I) void {
-        const arch = hart_arch(@TypeOf(hart_ptr.*));
-        const src = hart_ptr.getXRegister(inst.rs1).signed;
-        const imm = inst.getImmediate().signExtended(arch.XLEN).signed;
-        const res = .{ .signed = src +% imm };
-        hart_ptr.setXRegister(inst.rd, res);
-    }
+        fn storeDummy(self: *HartContext, comptime width: MemoryValueWidth, address: Int(.unsigned, XLEN), data: width.Data()) mmu.StoreError!void {
+            _ = self;
+            _ = address;
+            _ = data;
+        }
+    };
+}
 
-    test "ADDI" {
-        inline for (.{ 32, 64 }, .{"rv32i", "rv64i"}) |XLEN, arch| {
-            var hart = SimpleHart(XLEN, mmu.BasicMmu(XLEN)){ .mmu = .{} };
-            const file_path = try assemble.raw(arch,
-                \\ .global _start
-                \\
-                \\ _start:
-                \\     li a0, 0
-                \\     li a1, 0
-                \\ loop:
-                \\     addi a0, a0, 1
-                \\     addi a1, a1, -1
-                \\     ebreak
-                \\     j loop
-                \\
-            );
-            const file = try std.fs.openFileAbsolute(&file_path, .{});
-            try load.raw(&hart, file.reader());
-            file.close();
-            try std.fs.deleteFileAbsolute(&file_path);
-            
-            for (1..100) |i| {
-                while (true) {
-                    if (try hart.tick()) |trap| {
-                        switch (trap) {
-                            .ebreak => break,
-                            else => unreachable
+// todo should have some listing of available extensions, with some way to get functions out of them (extension F will require more register functions)
+pub fn Context(comptime HartContext: type, comptime Functions: ContextFunctions(HartContext)) type {
+    return struct {
+        pub const XLEN: comptime_int = HartContext.XLEN;
+        pub const IALIGN: comptime_int = HartContext.IALIGN;
+        pub const ILEN: comptime_int = HartContext.ILEN;
+
+        hart_ptr: *HartContext,
+
+        pub fn init(hart_ptr: *HartContext) @This() {
+            return .{ .hart_ptr = hart_ptr };
+        }
+
+        /// executes the provided instruction, does not increment the program counter, jump/branch instructions
+        /// will still change the program counter when appropriate.
+        pub fn execute(context: @This(), inst: Data(32)) !void {
+            const Masking = packed struct { compressed: u2, op: u5, _1: u5, funct3: u3, _2: u10, funct7: u7 };
+            const cir: Masking = @bitCast(inst);
+            if (cir.compressed != 0b11) return error.IllegalInstruction;
+            const opcode_map = extension.getOpcodeMap();
+            inline for (opcode_map, 0..) |Instructions, op| {
+                if (cir.op == op) {
+                    instructions_loop: inline for (Instructions) |Instruction_optional| {
+                        match: {
+                            // compiler tracks undefined so should be safe, right?
+                            if (Instruction_optional == null) break :instructions_loop;
+                            const Instruction = Instruction_optional.?;
+                            if (Instruction.Id.len > 1 and Instruction.Id[1] != cir.funct3) break :match;
+                            if (op == @as(extension.OpcodeActual, @bitCast(opcode.SYSTEM)).op) {
+                                if (Instruction.Id[1] == funct3.PRIV and Instruction.Id[2] != @as(inst_format.ENV, @bitCast(cir)).funct12) {
+                                    break :match;
+                                }
+                            } else {
+                                if (Instruction.Id.len > 2 and Instruction.Id[2] != cir.funct7) break :match;
+                            }
+                            //std.debug.print("executing instruction: {s:<20} {b:0>32}\n", .{ @typeName(Instruction), @as(u32, @bitCast(cir))});
+                            if (@typeInfo(@TypeOf(Instruction.execute)).Fn.return_type == void) {
+                                Instruction.execute(context, @bitCast(cir));
+                            } else {
+                                try Instruction.execute(context, @bitCast(cir));
+                            }
+                            return;
                         }
                     }
                 }
-                try expect(i == hart.getXRegister(register.a0).signed);
-                try expect(-@as(isize, @intCast(i)) == hart.getXRegister(register.a1).signed);
             }
-            // todo overflow testing
         }
-    }
-};
 
-/// Set Less Than Immediate
-///
-/// x[`rd`] = if (x[`rs1`] < signExtend(`imm`)) 1 else 0
-pub const SLTI = struct {
-    pub const Ext = .{ 32, ext.I };
+        pub fn getXRegister(self: @This(), rs: u5) Data(XLEN) {
+            return Functions.getXRegister(self.hart_ptr, rs);
+        }
 
-    pub const ID = .{ opcode.OP_IMM, funct3.SLTI };
+        pub fn setXRegister(self: @This(), rs: u5, v: Data(XLEN)) void {
+            return Functions.setXRegister(self.hart_ptr, rs, v);
+        }
 
-    pub fn execute(hart_ptr: anytype, inst: inst_format.I) void {
-        const arch = hart_arch(@TypeOf(hart_ptr.*));
-        const src = hart_ptr.getXRegister(inst.rs1).signed;
-        const imm = inst.getImmediate().signExtended(arch.XLEN).signed;
-        const res = .{ .unsigned =  if (src < imm) @as(arch.usize, 1) else @as(arch.usize, 0) };
-        hart_ptr.setXRegister(inst.rd, res);
-    }
-};
+        pub fn getPc(self: @This()) Int(.unsigned, XLEN) {
+            return Functions.getPc(self.hart_ptr);
+        }
 
-/// Set Less Than Immediate Unsigned
-///
-/// x[`rd`] = if (x[`rs1`] (unsigned)< signExtend(`imm`)) 1 else 0
-pub const SLTIU = struct {
-    pub const Ext = .{ 32, ext.I };
+        pub fn setPc(self: @This(), v: Int(.unsigned, XLEN)) void {
+            Functions.setPc(self.hart_ptr, v);
+        }
 
-    pub const ID = .{ opcode.OP_IMM, funct3.SLTIU };
+        pub fn load(self: @This(), comptime width: MemoryValueWidth, address: Int(.unsigned, XLEN)) mmu.LoadError!width.Data() {
+            return Functions.load(self.hart_ptr, width, address);
+        }
 
-    pub fn execute(hart_ptr: anytype, inst: inst_format.I) void {
-        const arch = hart_arch(@TypeOf(hart_ptr.*));
-        const src = hart_ptr.getXRegister(inst.rs1).unsigned;
-        const imm = inst.getImmediate().signExtended(arch.XLEN).unsigned;
-        const res = .{ .unsigned =  if (src < imm) @as(arch.usize, 1) else @as(arch.usize, 0) };
-        hart_ptr.setXRegister(inst.rd, res);
-    }
-};
+        pub fn store(self: @This(), comptime width: MemoryValueWidth, address: Int(.unsigned, XLEN), data: width.Data()) mmu.StoreError!void {
+            return Functions.store(self.hart_ptr, width, address, data);
+        }
 
-/// AND Immediate
-///
-/// x[`rd`] = x[`rs1`] & signExtend(`imm`)
-pub const ANDI = struct {
-    pub const Ext = .{ 32, ext.I };
+        pub fn fence(self: @This(), fm: u4, pred: FenceOperands, succ: FenceOperands) void {
+            Functions.fence(self.hart_ptr, fm, pred, succ);
+        }
 
-    pub const ID = .{ opcode.OP_IMM, funct3.ANDI };
+        pub fn ecall(self: @This()) void {
+            Functions.ecall(self.hart_ptr);
+        }
 
-    pub fn execute(hart_ptr: anytype, inst: inst_format.I) void {
-        const arch = hart_arch(@TypeOf(hart_ptr.*));
-        const src = hart_ptr.getXRegister(inst.rs1).signed;
-        const imm = inst.getImmediate().signExtended(arch.XLEN).signed;
-        const res = .{ .signed = src & imm };
-        hart_ptr.setXRegister(inst.rd, res);
-    }
-};
+        pub fn ebreak(self: @This()) void {
+            Functions.ebreak(self.hart_ptr);
+        }
 
-/// OR Immediate
-///
-/// x[`rd`] = x[`rs1`] | signExtend(`imm`)
-pub const ORI = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.OP_IMM, funct3.ORI };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.I) void {
-        const arch = hart_arch(@TypeOf(hart_ptr.*));
-        const src = hart_ptr.getXRegister(inst.rs1).signed;
-        const imm = inst.getImmediate().signExtended(arch.XLEN).signed;
-        const res = .{ .signed = src | imm };
-        hart_ptr.setXRegister(inst.rd, res);
-    }
-};
-
-/// eXclusive OR Immediate
-///
-/// x[`rd`] = x[`rs1`] ^ signExtend(`imm`)
-/// `XORI rd, rs1, -1` is equivelent to psuedoinstruction `NOT rd, rs1`
-pub const XORI = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.OP_IMM, funct3.XORI };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.I) void {
-        const arch = hart_arch(@TypeOf(hart_ptr.*));
-        const src = hart_ptr.getXRegister(inst.rs1).signed;
-        const imm = inst.getImmediate().signExtended(arch.XLEN).signed;
-        const res = .{ .signed = src ^ imm };
-        hart_ptr.setXRegister(inst.rd, res);
-    }
-};
-
-/// Shift Left Logical Immediate
-///
-/// x[`rd`] = x[`rs1`] << `shamt`
-pub const SLLI = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.OP_IMM, funct3.SLLI, 0b000_0000 };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.IS) void {
-        const src = hart_ptr.getXRegister(inst.rs1).unsigned;
-        const res = .{ .unsigned = src << inst.shamt };
-        hart_ptr.setXRegister(inst.rd, res);
-    }
-};
-
-/// Shift Right Logical Immediate
-///
-/// x[`rd`] = x[`rs1`] (unsigned)>> `shamt`
-pub const SRLI = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.OP_IMM, funct3.SRLI, 0b000_0000 };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.IS) void {
-        const src = hart_ptr.getXRegister(inst.rs1).unsigned;
-        const res = .{ .unsigned = src >> inst.shamt };
-        hart_ptr.setXRegister(inst.rd, res);
-    }
-};
-
-/// Shift Right Arithmetic Immediate
-///
-/// x[`rd`] = x[`rs1`] (signed)>> `shamt`
-pub const SRAI = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.OP_IMM, funct3.SRAI, 0b000_0010 };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.IS) void {
-        const src = hart_ptr.getXRegister(inst.rs1).signed;
-        const res = .{ .signed = src >> inst.shamt };
-        hart_ptr.setXRegister(inst.rd, res);
-    }
-};
-
-/// Load Upper Immediate
-///
-/// x[`rd`] = signExtend(`imm` << 12)
-pub const LUI = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{opcode.LUI};
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.U) void {
-        const imm = inst.getImmediate().unsigned;
-        const res = .{ .unsigned = imm };
-        hart_ptr.setXRegister(inst.rd, res);
-    }
-};
-
-/// Add Upper Immediate to `PC`
-///
-/// x[`rd`] = `pc` + signExtend(`imm` << 12)
-pub const AUIPC = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{opcode.AUIPC};
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.U) void {
-        const imm = inst.getImmediate().unsigned;
-        const pc = hart_ptr.getPc();
-        const res = .{ .unsigned = pc +% imm };
-        hart_ptr.setXRegister(inst.rd, res);
-    }
-};
-
-/// ADD
-///
-/// x[`rd`] = x[`rs1`] +% x[`rs2`]
-pub const ADD = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.OP, funct3.ADD, 0b000_0000 };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.R) void {
-        const arch = hart_arch(@TypeOf(hart_ptr.*));
-        const src1 = hart_ptr.getXRegister(inst.rs1).signExtended(arch.XLEN).signed;
-        const src2 = hart_ptr.getXRegister(inst.rs2).signExtended(arch.XLEN).signed;
-        const res = .{ .signed = src1 +% src2 };
-        hart_ptr.setXRegister(inst.rd, res);
-    }
-};
-
-/// Set Less Than
-///
-/// x[`rd`] = if (x[`rs1`] (signed)< x[`rs2`]) 1 else 0
-pub const SLT = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.OP, funct3.SLT, 0b000_0000 };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.R) void {
-        const arch = hart_arch(@TypeOf(hart_ptr.*));
-        const src1 = hart_ptr.getXRegister(inst.rs1).signed;
-        const src2 = hart_ptr.getXRegister(inst.rs2).signed;
-        const res = .{ .unsigned = if (src1 < src2) @as(arch.usize, 1) else @as(arch.usize, 0) };
-        hart_ptr.setXRegister(inst.rd, res);
-    }
-};
-
-/// Set Less Than Unsigned
-///
-/// x[`rd`] = if (x[`rs1`] (unsigned)< x[`rs2`]) 1 else 0
-/// `SLTU rd, x0, rs1` is equivalent to psuedoinstruction `SNEZ rd, rs`
-pub const SLTU = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.OP, funct3.SLTU, 0b000_0000 };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.R) void {
-        const arch = hart_arch(@TypeOf(hart_ptr.*));
-        const src1 = hart_ptr.getXRegister(inst.rs1).unsigned;
-        const src2 = hart_ptr.getXRegister(inst.rs2).unsigned;
-        const res = .{ .unsigned = if (src1 < src2) @as(arch.usize, 1) else @as(arch.usize, 0) };
-        hart_ptr.setXRegister(inst.rd, res);
-    }
-};
-
-/// AND
-///
-/// x[`rd`] = x[`rs1`] & x[`rs2`]
-pub const AND = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.OP, funct3.AND, 0b000_0000 };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.R) void {
-        const src1 = hart_ptr.getXRegister(inst.rs1).unsigned;
-        const src2 = hart_ptr.getXRegister(inst.rs2).unsigned;
-        const res = .{ .unsigned = src1 & src2 };
-        hart_ptr.setXRegister(inst.rd, res);
-    }
-};
-
-/// OR
-///
-/// x[`rd`] = x[`rs1`] | x[`rs2`]
-pub const OR = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.OP, funct3.OR, 0b000_0000 };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.R) void {
-        const src1 = hart_ptr.getXRegister(inst.rs1).unsigned;
-        const src2 = hart_ptr.getXRegister(inst.rs2).unsigned;
-        const res = .{ .unsigned = src1 | src2 };
-        hart_ptr.setXRegister(inst.rd, res);
-    }
-};
-
-/// eXclusive OR
-///
-/// x[`rd`] = x[`rs1`] ^ x[`rs2`]
-pub const XOR = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.OP, funct3.XOR, 0b000_0000 };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.R) void {
-        const src1 = hart_ptr.getXRegister(inst.rs1).unsigned;
-        const src2 = hart_ptr.getXRegister(inst.rs2).unsigned;
-        const res = .{ .unsigned = src1 ^ src2 };
-        hart_ptr.setXRegister(inst.rd, res);
-    }
-};
-
-/// Shift Left Logical
-///
-/// x[`rd`] = x[`rs1`] << (x[`rs2`] & 0b1_1111)
-pub const SLL = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.OP, funct3.SLL, 0b000_0000 };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.R) void {
-        const src1 = hart_ptr.getXRegister(inst.rs1).unsigned;
-        const src2 = hart_ptr.getXRegister(inst.rs2).truncated(5).unsigned;
-        const res = .{ .unsigned = src1 << src2 };
-        hart_ptr.setXRegister(inst.rd, res);
-    }
-};
-
-/// Shift Right Logical
-///
-/// x[`rd`] = x[`rs1`] (unsigned)>> (x[`rs2`] & 0b1_1111)
-pub const SRL = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.OP, funct3.SRL, 0b000_0000 };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.R) void {
-        const src1 = hart_ptr.getXRegister(inst.rs1).unsigned;
-        const src2 = hart_ptr.getXRegister(inst.rs2).truncated(5).unsigned;
-        const res = .{ .unsigned = src1 >> src2 };
-        hart_ptr.setXRegister(inst.rd, res);
-    }
-};
-
-/// SUB
-///
-/// x[`rd`] = x[`rs1`] -% x[`rs2`]
-pub const SUB = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.OP, funct3.SUB, 0b000_0010 };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.R) void {
-        const src1 = hart_ptr.getXRegister(inst.rs1).unsigned;
-        const src2 = hart_ptr.getXRegister(inst.rs2).unsigned;
-        const res = .{ .unsigned = src1 -% src2 };
-        hart_ptr.setXRegister(inst.rd, res);
-    }
-};
-
-/// Shift Right Arithmetic
-///
-/// x[`rd`] = x[`rs1`] (signed)>> (x[`rs2`] & 0b1_1111)
-pub const SRA = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.OP, funct3.SRA, 0b000_0010 };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.R) void {
-        const src1 = hart_ptr.getXRegister(inst.rs1).signed;
-        const src2 = hart_ptr.getXRegister(inst.rs2).truncated(5).unsigned;
-        const res = .{ .signed = src1 >> src2 };
-        hart_ptr.setXRegister(inst.rd, res);
-    }
-};
+        // the instruction is passed in as a u32 to allow forward compatibility with
+        // future extensions that expand upon FENCE.I, currently the value of inst
+        // isn't important and can be ignored
+        //pub fn fenceI(self: *@This(), inst: u32) void {
+        //    self.fenceI(self.hart_ptr, inst);
+        //}
+    };
+}
 
 pub const JumpError = error {
     InstructionAddressMisaligned
 };
 
-/// Jump And Link
-///
-/// x[`rd`] = `pc` +% 4; `pc` +%= signExtend(`imm`)
-/// `JAL x0, [whatever] is equivalent to psuedoinstruction `J [whatever]` (plain unconditional jump)
-/// Can raise the `InstructionAddressMisaligned` exception if execution attempts
-/// to set PC to an invalid address however, this is not possible when C-extension is enabled.
-pub const JAL = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.JAL };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.J) JumpError!void {
-        const arch = hart_arch(@TypeOf(hart_ptr.*));
-        const imm = inst.getImmediate().signExtended(arch.XLEN).unsigned;
-        const pc = hart_ptr.getPc();
-        const pc_set = pc +% imm;
-        if (arch.IALIGN != 16 and pc_set % 4 != 0) {
-            return error.InstructionAddressMisaligned;
-        } else {
-            // todo not sure if this should happen irregardless of the above exception
-            hart_ptr.setXRegister(inst.rd, .{ .unsigned = pc +% 4 });
-            hart_ptr.setPc(pc_set);
-        }
-    }
-};
-
-/// Jump And Link Register
-///
-/// x[`rd`] = `pc` +% 4; `pc` = (x[`rs1`] +% signExtend(`imm`)) & signExtend(0b10)
-/// Can raise the `InstructionAddressMisaligned` exception if execution attempts
-/// to set PC to an invalid address however, this is not possible when C-extension is enabled.
-pub const JALR = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.JALR, 0 };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.I) JumpError!void {
-        const arch = hart_arch(@TypeOf(hart_ptr.*));
-        const src = hart_ptr.getXRegister(inst.rs1).signed;
-        const imm = inst.getImmediate().signExtended(arch.XLEN).signed;
-        const pc = hart_ptr.getPc();
-        const pc_set: arch.usize = @bitCast((src +% imm) & 0b10);
-        if (@TypeOf(hart_ptr.*).IALIGN != 16 and pc_set % 4 != 0) {
-            return error.InstructionAddressMisaligned;
-        } else {
-            // todo not sure if this should happen irregardless of the above exception
-            hart_ptr.setXRegister(inst.rd, .{ .unsigned = pc +% 4 });
-            hart_ptr.setPc(pc_set);
-        }
-    }
-
-    test {
-        var hart = SimpleHart(32, mmu.BasicMmu(32)){ .mmu = .{} };
-        var inst: inst_format.I = @bitCast(@as(u32, 0));
-        inst.setImmediate(.{ .unsigned = 0 });
-        try JALR.execute(&hart, inst);
-        inst.setImmediate(.{ .unsigned = 1 }); // lowest bit cleared
-        try JALR.execute(&hart, inst);
-        inst.setImmediate(.{ .unsigned = 2 });
-        try expectError(error.InstructionAddressMisaligned, JALR.execute(&hart, inst));
-        inst.setImmediate(.{ .unsigned = 3 });
-        try expectError(error.InstructionAddressMisaligned, JALR.execute(&hart, inst));
-    }
-};
-
-inline fn branch_execute(hart_ptr: anytype, inst: inst_format.B, comptime signedness: Signedness, comptime compare: std.math.CompareOperator) JumpError!void {
-    const arch = hart_arch(@TypeOf(hart_ptr.*));
-    const src1 = switch(signedness) {
-        .signed => hart_ptr.getXRegister(inst.rs1).signed,
-        .unsigned => hart_ptr.getXRegister(inst.rs1).unsigned
-    };
-    const src2 = switch(signedness) {
-        .signed => hart_ptr.getXRegister(inst.rs2).signed,
-        .unsigned => hart_ptr.getXRegister(inst.rs2).unsigned
-    };
-    const condition = switch (compare) {
-        .lt =>  src1 <  src2,
-        .lte => src1 <= src2,
-        .eq =>  src1 == src2,
-        .gte => src1 >= src2,
-        .gt =>  src1 >  src2,
-        .neq => src1 != src2
-    };
-    if (condition) {
-        const pc = hart_ptr.getPc();
-        const imm = inst.getImmediate().signExtended(arch.XLEN).unsigned;
-        const pc_set = pc +% imm;
-        if (arch.IALIGN != 16 and pc_set % 4 != 0) {
-            return error.InstructionAddressMisaligned;
-        } else {
-            hart_ptr.setPc(pc_set);
-        }
-    }
-}
-
-/// Branch if EQual
-///
-/// if (x[`rs1`] == x[`rs2`]) `pc` +%= signExtend(`imm`)
-/// Can raise the `InstructionAddressMisaligned` exception if execution attempts
-/// to set PC to an invalid address, however, this is not possible when C-extension is enabled.
-pub const BEQ = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.BRANCH, funct3.BEQ };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.B) JumpError!void {
-        return branch_execute(hart_ptr, inst, .signed, .eq);
-    }
-};
-
-/// Branch if Not eQual
-///
-/// if (x[`rs1`] != x[`rs2`]) `pc` +%= signExtend(`imm`)
-/// Can raise the `InstructionAddressMisaligned` exception if execution attempts
-/// to set PC to an invalid address, however, this is not possible when C-extension is enabled.
-pub const BNQ = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.BRANCH, funct3.BNE };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.B) JumpError!void {
-        return branch_execute(hart_ptr, inst, .signed, .neq);
-    }
-};
-
-/// Branch if Less Than
-///
-/// if (x[`rs1`] (signed)< x[`rs2`]) `pc` +%= signExtend(`imm`)
-/// Can raise the `InstructionAddressMisaligned` exception if execution attempts
-/// to set PC to an invalid address, however, this is not possible when C-extension is enabled.
-/// psuedoinstruction `BGT` can be implemented by flipping `rs1` and `rs2`
-pub const BLT = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.BRANCH, funct3.BLT };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.B) JumpError!void {
-        return branch_execute(hart_ptr, inst, .signed, .lt);
-    }
-};
-
-/// Branch if Less Than Unsigned
-///
-/// if (x[`rs1`] (unsigned)< x[`rs2`]) `pc` +%= `imm`
-/// Can raise the `InstructionAddressMisaligned` exception if execution attempts
-/// to set PC to an invalid address, however, this is not possible when C-extension is enabled.
-/// psuedoinstruction `BGTU` can be implemented by flipping `rs1` and `rs2`
-pub const BLTU = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.BRANCH, funct3.BLTU };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.B) JumpError!void {
-        return branch_execute(hart_ptr, inst, .unsigned, .lt);
-    }
-};
-
-/// Branch if Greater or Equal
-///
-/// if (x[`rs1`] (signed)>= x[`rs2`]) `pc` +%= `imm`
-/// Can raise the `InstructionAddressMisaligned` exception if execution attempts
-/// to set PC to an invalid address, however, this is not possible when C-extension is enabled.
-/// psuedoinstruction `BLE` can be implemented by flipping `rs1` and `rs2`
-pub const BGE = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.BRANCH, funct3.BGE };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.B) JumpError!void {
-        return branch_execute(hart_ptr, inst, .signed, .gte);
-    }
-};
-
-/// Branch if Greater or Equal Unsigned
-///
-/// if (x[`rs1`] (unsigned)>= x[`rs2`]) `pc` +%= `imm`
-/// Can raise the `InstructionAddressMisaligned` exception if execution attempts
-/// to set PC to an invalid address, however, this is not possible when C-extension is enabled.
-/// psuedoinstruction `BLEU` can be implemented by flipping `rs1` and `rs2`
-pub const BGEU = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.BRANCH, funct3.BGEU };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.B) JumpError!void {
-        return branch_execute(hart_ptr, inst, .unsigned, .gte);
-    }
-};
-
-inline fn load_execute(hart_ptr: anytype, inst: inst_format.I, comptime width: MemoryValueWidth, comptime signedness: Signedness) mmu.LoadError!void {
-    const arch = hart_arch(@TypeOf(hart_ptr.*));
-    const base = hart_ptr.getXRegister(inst.rs1).unsigned;
-    const imm = inst.getImmediate().signExtended(arch.XLEN).unsigned;
-    const addr = base +% imm;
-    const data = try hart_ptr.load(width, addr);
-    const res = switch (signedness) {
-        .signed => data.signExtended(arch.XLEN),
-        .unsigned => data.zeroExtended(arch.XLEN)
-    };
-    hart_ptr.setXRegister(inst.rd, res);
-}
-
-/// Load Byte (8 bits)
-///
-/// x[`rd`] = signExtend(mem.load(8, x[`rs1`] +% signExtend(`imm`)))
-pub const LB = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.LOAD, funct3.LB };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.I) mmu.LoadError!void {
-        return load_execute(hart_ptr, inst, .byte, .signed);
-    }
-};
-
-/// Load Halfword (16 bits)
-///
-/// x[`rd`] = signExtend(mem.load(16, x[`rs1`] +% signExtend(`imm`)))
-pub const LH = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.LOAD, funct3.LH };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.I) mmu.LoadError!void {
-        return load_execute(hart_ptr, inst, .halfword, .signed);
-    }
-};
-
-/// Load Word (32 bits)
-///
-/// x[`rd`] = signExtend(mem.load(32, x[`rs1`] +% signExtend(`imm`)))
-pub const LW = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.LOAD, funct3.LW };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.I) mmu.LoadError!void {
-        return load_execute(hart_ptr, inst, .word, .signed);
-    }
-};
-
-/// Load Byte Unsigned (8 bits)
-///
-/// x[`rd`] = mem.load(8, x[`rs1`] +% signExtend(`imm`))
-pub const LBU = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.LOAD, funct3.LBU };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.I) mmu.LoadError!void {
-        return load_execute(hart_ptr, inst, .byte, .unsigned);
-    }
-};
-
-/// Load Halfword Unsigned (16 bits)
-///
-/// x[`rd`] = mem.load(16, x[`rs1`] +% signExtend(`imm`))
-pub const LHU = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.LOAD, funct3.LHU };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.I) mmu.LoadError!void {
-        return load_execute(hart_ptr, inst, .halfword, .unsigned);
-    }
-};
-
-inline fn store_execute(hart_ptr: anytype, inst: inst_format.S, comptime width: MemoryValueWidth) mmu.StoreError!void {
-    const arch = hart_arch(@TypeOf(hart_ptr.*));
-    const base = hart_ptr.getXRegister(inst.rs1).unsigned;
-    const imm = inst.getImmediate().signExtended(arch.XLEN).unsigned;
-    const addr = base +% imm;
-    const src = hart_ptr.getXRegister(inst.rs2).truncated(width.bits());
-    try hart_ptr.store(width, addr, src);
-}
-
-/// Store Byte (8 bits)
-///
-/// mem[x[`rs1`] +% signExtend(`imm`)] = truncate(8, x[`rs2`])
-pub const SB = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.STORE, funct3.SB };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.S) mmu.StoreError!void {
-        return store_execute(hart_ptr, inst, .byte);
-    }
-};
-
-/// Store Halfword (16 bits)
-///
-/// mem[x[`rs1`] +% signExtend(`imm`)] = truncate(16, x[`rs2`])
-pub const SH = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.STORE, funct3.SH };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.S) mmu.StoreError!void {
-        return store_execute(hart_ptr, inst, .halfword);
-    }
-};
-
-/// Store Word (32 bits)
-///
-/// mem[x[`rs1`] +% signExtend(`imm`)] = truncate(32, x[`rs2`])
-pub const SW = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.STORE, funct3.SW };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.S) mmu.StoreError!void {
-        return store_execute(hart_ptr, inst, .word);
-    }
-};
-
-/// Fence
-pub const FENCE = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.MISC_MEM, funct3.FENCE };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.FENCE) void {
-        const succ: FenceOperands = .{
-            .writes = inst.sw,
-            .reads = inst.sr,
-            .outputs = inst.so,
-            .inputs = inst.si
-        };
-        const pred: FenceOperands = .{
-            .writes = inst.pw,
-            .reads = inst.pr,
-            .outputs = inst.po,
-            .inputs = inst.pi
-        };
-        hart_ptr.fence(inst.fm, pred, succ);
-    }
-};
-
-/// Environment Call
-pub const ECALL = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.SYSTEM, funct3.PRIV, funct12.ECALL };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.ENV) void {
-        // nothing we need in the contents of the instruction, but the argument is
-        // needed for pattern matching the instruction
-        _ = inst;
-        hart_ptr.ecall();
-    }
-};
-
-/// Environment Break
-pub const EBREAK = struct {
-    pub const Ext = .{ 32, ext.I };
-
-    pub const ID = .{ opcode.SYSTEM, funct3.PRIV, funct12.EBREAK };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.ENV) void {
-        // nothing we need in the contents of the instruction, but the argument is
-        // needed for pattern matching the instruction
-        _ = inst;
-        hart_ptr.ebreak();
-    }
-};
-
-/// Instruction Fence
-pub const FENCE_I = struct {
-    pub const Ext = .{ 32, ext.Zifencei };
-
-    pub const ID = .{ opcode.MISC_MEM, funct3.FENCE_I };
-
-    pub fn execute(hart_ptr: anytype, inst: inst_format.I) void {
-        hart_ptr.fence_i(@as(u32, @bitCast(inst)));
-    }
-};
-
-fn hart_arch(comptime HartType: type) type {
+pub fn hart_arch(comptime HartContext: type) type {
     return struct {
-        const XLEN = HartType.XLEN;
-        const @"usize" = Int(.unsigned, HartType.XLEN);
-        const @"isize" = Int(.signed, HartType.XLEN);
-        const IALIGN = HartType.IALIGN;
-        const ILEN = HartType.ILE;
+        pub const XLEN = HartContext.XLEN;
+        pub const @"usize" = Int(.unsigned, XLEN);
+        pub const @"isize" = Int(.signed, XLEN);
+        pub const IALIGN = HartContext.IALIGN;
+        pub const ILEN = HartContext.ILEN;
     };
 }
 
@@ -858,48 +250,3 @@ pub const FenceOperands = packed struct {
     outputs: bool,
     inputs: bool
 };
-
-comptime {
-    for (@typeInfo(instruction).Struct.decls) |decl| {
-        const ignored = .{ "funct3", "funct12", "FenceOperands", "JumpError" };
-        if (arrayContains(ignored, decl.name)) continue;
-        const field = @field(instruction, decl.name);
-        if (!@hasDecl(field, "Ext") or !@hasDecl(field, "ID")) {
-            @compileError("Instructions must have Ext and ID declared: " ++ decl.name);
-        }
-        const Instruction = field;
-        if (Instruction.Ext.len < 2) {
-            @compileError("An Instruction's Ext field must contain a minimum XLEN {32, 64} followed by the " ++
-            "extension that implements them: " ++ decl.name);
-        }
-        if (!arrayContains(.{32, 64}, Instruction.Ext[0])) {
-            @compileError("An Instruction's first Ext field must start with either 32 or 64: " ++ decl.name);
-        }
-        if (Instruction.ID.len > 3) {
-            @compileError("An Instruction's ID must have at most 3 elements: " ++ decl.name);
-        }
-    }
-}
-
-fn arrayContains(array: anytype, value: anytype) bool {
-    for (array) |v| {
-        switch (@typeInfo(@TypeOf(value))) {
-            .Array, .Pointer => if (std.mem.eql(u8, v, value)) {
-                return true;
-            },
-            else => if (v == value) {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-comptime {
-    for (@typeInfo(@This()).Struct.decls) |decl| {
-        const field = @field(@This(), decl.name);
-        if (@TypeOf(field) == type and @typeInfo(field) != .ErrorSet) {
-            std.testing.refAllDecls(field);
-        }
-    }
-}

@@ -9,6 +9,8 @@ comptime {
     for (@typeInfo(@This()).Struct.decls) |decl| {
         _ = @field(@This(), decl.name);
     }
+    const extension = @import("extension.zig");
+    std.testing.refAllDecls(extension);
 }
 
 const std = @import("std");
@@ -101,5 +103,3 @@ comptime {
         // todo big endian Harts/Mmus are not properly supported
     }
 }
-
-// todo add InstructionContext (like std.io.Reader) for instructions to execute in

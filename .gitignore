@@ -2,3 +2,4 @@
 /lib
 /lib.o
 /riscv-emu.iml
+/zig-cache

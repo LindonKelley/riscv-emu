@@ -46,6 +46,8 @@ pub const opcode = struct {
 };
 
 pub const funct3 = struct {
+    // RV32I
+
     pub const ADDI: u3 =    0b000;
     pub const SLTI: u3 =    0b010;
     pub const SLTIU: u3 =   0b011;
@@ -89,15 +91,39 @@ pub const funct3 = struct {
 
     pub const PRIV: u3 =    0b000;
 
-    // Zifencei
+    // RV64I
 
-    pub const FENCE_I: u3 = 0b001;
+    pub const ADDIW: u3 =   0b111;
 
-    // todo move to RV64 section
     pub const LWU: u3 =     0b110;
     pub const LD: u3 =      0b011;
 
     pub const SD: u3 =      0b011;
+
+    // Zifencei
+
+    pub const FENCE_I: u3 = 0b001;
+
+    // RV32M
+
+    pub const MUL: u3 =     0b000;
+    pub const MULH: u32 =   0b001;
+    pub const MULHSU: u32 = 0b010;
+    pub const MULHU: u32 =  0b011;
+
+    pub const DIV: u32 =    0b100;
+    pub const DIVU: u32 =   0b101;
+    pub const REM: u32 =    0b110;
+    pub const REMU: u32 =   0b111;
+
+    // RV64M
+
+    pub const MULW: u3 =    0b000;
+
+    pub const DIVW: u3 =    0b100;
+    pub const DIVUW: u3 =   0b101;
+    pub const REMW: u3 =    0b110;
+    pub const REMUW: u3 =   0b111;
 };
 
 pub const funct12 = struct {
@@ -117,8 +143,6 @@ pub fn ContextFunctions(comptime HartContext: type) type {
         load: *const @TypeOf(loadDummy),
         store: *const @TypeOf(storeDummy),
         fence: *const fn(self: *HartContext, fm: u4, pred: FenceOperands, succ: FenceOperands) void,
-        // todo merge environment calls into one function that receives the funct12, remove inst_format.ENV and use the
-        // todo I format as specified by the RISC-V spec
         ecall: *const fn(self: *HartContext) void,
         ebreak: *const fn(self: *HartContext) void,
         // fenceI: fn(self: *HartContext, inst: Data(32)) void, todo part of Zifencei
@@ -138,6 +162,7 @@ pub fn ContextFunctions(comptime HartContext: type) type {
 }
 
 // todo should have some listing of available extensions, with some way to get functions out of them (extension F will require more register functions)
+// todo ContextBuilder to avoid Function construction intermediate in Context creation
 pub fn Context(comptime HartContext: type, comptime Functions: ContextFunctions(HartContext)) type {
     return struct {
         pub const XLEN: comptime_int = HartContext.XLEN;

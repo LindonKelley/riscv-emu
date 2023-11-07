@@ -19,6 +19,7 @@ const Int = std.meta.Int;
 const load = @import("../load.zig");
 const assemble = @import("../assemble.zig");
 const register = @import("../register.zig");
+const Data = @import("../data.zig").Data;
 
 comptime {
     const extension = @import("../extension.zig");
@@ -376,7 +377,7 @@ pub const SRL = struct {
     }
 };
 
-/// SUB
+/// SUBtract
 ///
 /// x[`rd`] = x[`rs1`] -% x[`rs2`]
 pub const SUB = struct {
@@ -427,7 +428,6 @@ pub const JAL = struct {
         if (arch.IALIGN != 16 and pc_set % 4 != 0) {
             return error.InstructionAddressMisaligned;
         } else {
-            // todo not sure if this should happen irregardless of the above exception
             context.setXRegister(inst.rd, .{ .unsigned = pc +% 4 });
             context.setPc(pc_set);
         }
@@ -453,7 +453,6 @@ pub const JALR = struct {
         if (@TypeOf(context).IALIGN != 16 and pc_set % 4 != 0) {
             return error.InstructionAddressMisaligned;
         } else {
-            // todo not sure if this should happen irregardless of the above exception
             context.setXRegister(inst.rd, .{ .unsigned = pc +% 4 });
             context.setPc(pc_set);
         }
@@ -758,5 +757,25 @@ pub const EBREAK = struct {
         // needed for pattern matching the instruction
         _ = inst;
         context.ebreak();
+    }
+};
+
+// RV64 ----------------------------------------------------------------------------------------------------------------
+
+/// ADD Immediate Word (32 bits)
+///
+/// x[`rd`] = signExtend(truncate(32, x[`rs1`]) +% signExtend(`imm`))
+/// `ADDIW rd, rs1, 0` is used to implement the `SEXT.W pseudoinstruction`
+pub const ADDIW = struct {
+    pub const Ext = .{ 64 };
+
+    pub const Id = .{ opcode.OP_IMM_32, funct3.ADDIW };
+
+    pub fn execute(context: anytype, inst: inst_format.I) void {
+        const arch = hart_arch(@TypeOf(context));
+        const src = context.getXRegister(inst.rs1).truncated(32).signed;
+        const imm = inst.getImmediate().signExtended(32).signed;
+        const res = (Data(32) { .signed = src +% imm }).signExtended(arch.XLEN);
+        context.setXRegister(inst.rd, res);
     }
 };

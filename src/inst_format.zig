@@ -17,6 +17,8 @@ pub const R = packed struct {
     rs1: u5,
     rs2: u5,
     funct7: u7,
+
+    pub usingnamespace helpers(@This());
 };
 
 pub const I = packed struct {
@@ -28,9 +30,7 @@ pub const I = packed struct {
 
     pub const Conversion = packed struct { imm0: u12 };
 
-    pub const getImmediate = helpers.getImmediate;
-
-    pub const setImmediate = helpers.setImmediate;
+    pub usingnamespace helpers(@This());
 };
 
 /// specialization of the I format for shift immediate instructions such as SLLI, SRLI, and SRAI
@@ -43,6 +43,8 @@ pub const IS = packed struct {
     rs1: u5,
     shamt: u5,
     funct7: u7, // the spec actually names this imm[11:5] but it's usage matches funct7
+
+    pub usingnamespace helpers(@This());
 };
 
 pub const S = packed struct {
@@ -55,9 +57,7 @@ pub const S = packed struct {
 
     pub const Conversion = packed struct { imm0: u5, imm5: u7 };
 
-    pub const getImmediate = helpers.getImmediate;
-
-    pub const setImmediate = helpers.setImmediate;
+    pub usingnamespace helpers(@This());
 };
 
 pub const B = packed struct {
@@ -72,9 +72,7 @@ pub const B = packed struct {
 
     pub const Conversion = packed struct { imm0: u1 = 0, imm1: u4, imm5: u6, imm11: u1, imm12: u1 };
 
-    pub const getImmediate = helpers.getImmediate;
-
-    pub const setImmediate = helpers.setImmediate;
+    pub usingnamespace helpers(@This());
 };
 
 pub const U = packed struct {
@@ -84,9 +82,7 @@ pub const U = packed struct {
 
     pub const Conversion = packed struct { imm0: u12 = 0, imm12: u20 };
 
-    pub const getImmediate = helpers.getImmediate;
-
-    pub const setImmediate = helpers.setImmediate;
+    pub usingnamespace helpers(@This());
 };
 
 pub const J = packed struct {
@@ -99,9 +95,7 @@ pub const J = packed struct {
 
     pub const Conversion = packed struct { imm0: u1 = 0, imm1: u10, imm11: u1, imm12: u8, imm20: u1 };
 
-    pub const getImmediate = helpers.getImmediate;
-
-    pub const setImmediate = helpers.setImmediate;
+    pub usingnamespace helpers(@This());
 };
 
 // the spec doesn't actually name this format, choosing a full word to be safe
@@ -118,7 +112,9 @@ pub const FENCE = packed struct {
     pr: bool,
     po: bool,
     pi: bool,
-    fm: u4
+    fm: u4,
+
+    pub usingnamespace helpers(@This());
 };
 
 // ECALL and EBREAK use this, although the spec defines their format as I, this
@@ -128,35 +124,52 @@ pub const ENV = packed struct {
     rd: u5,
     funct3: u3,
     rs1: u5,
-    funct12: u12
+    funct12: u12,
+
+    pub usingnamespace helpers(@This());
 };
 
-const helpers = struct {
-    inline fn getImmediate(format_ptr: anytype) Data(@bitSizeOf(@TypeOf(format_ptr.*).Conversion)) {
-        const Conversion = @TypeOf(format_ptr.*).Conversion;
-        var conv: Conversion = undefined;
-        // in formats B, U, and J this is actually appropriate, in I and S the below will overwrite it anyway
-        conv.imm0 = 0;
-        structCopyFields(&conv, format_ptr.*);
-        return .{ .unsigned = @bitCast(conv) };
-    }
+pub fn helpers(comptime Format: type) type {
+    return struct {
+        pub fn getFuncts() [8]?std.builtin.Type.StructField {
+            var functs: [8]?std.builtin.Type.StructField = .{ null } ** 8;
+            var index = 0;
+            inline for (@typeInfo(Format).Struct.fields) |field| {
+                const eql = std.mem.eql;
+                if (field.name.len > "funct".len and eql(u8, field.name[0.."funct".len], "funct")) {
+                    functs[index] = field;
+                    index += 1;
+                }
+            }
+            return functs;
+        }
 
-    // some instruction formats ignore some number of lower bits,
-    // in those cases the aforementioned lower bits of the given `imm`
-    // argument are silently ignored
-    inline fn setImmediate(format_ptr: anytype, imm: Data(@bitSizeOf(@TypeOf(format_ptr.*).Conversion))) void {
-        const conv: @TypeOf(format_ptr.*).Conversion = @bitCast(imm);
-        structCopyFields(format_ptr, conv);
-    }
+        pub fn getImmediate(format_ptr: Format) Data(@bitSizeOf(Format.Conversion)) {
+            const Conversion = Format.Conversion;
+            var conv: Conversion = undefined;
+            // in formats B, U, and J this is actually appropriate, in I and S the below will overwrite it anyway
+            conv.imm0 = 0;
+            structCopyFields(&conv, format_ptr);
+            return .{ .unsigned = @bitCast(conv) };
+        }
 
-    inline fn structCopyFields(dst_ptr: anytype, src: anytype) void {
-        inline for (@typeInfo(@TypeOf(dst_ptr.*)).Struct.fields) |field| {
-            if (@hasField(@TypeOf(src), field.name)) {
-                @field(dst_ptr, field.name) = @field(src, field.name);
+        // some instruction formats ignore some number of lower bits,
+        // in those cases the aforementioned lower bits of the given `imm`
+        // argument are silently ignored
+        pub fn setImmediate(format_ptr: *Format, imm: Data(@bitSizeOf(Format.Conversion))) void {
+            const conv: Format.Conversion = @bitCast(imm);
+            structCopyFields(format_ptr, conv);
+        }
+
+        inline fn structCopyFields(dst_ptr: anytype, src: anytype) void {
+            inline for (@typeInfo(@TypeOf(dst_ptr.*)).Struct.fields) |field| {
+                if (@hasField(@TypeOf(src), field.name)) {
+                    @field(dst_ptr, field.name) = @field(src, field.name);
+                }
             }
         }
-    }
-};
+    };
+}
 
 test "instruction type width sanity check" {
     inline for (@typeInfo(@This()).Struct.decls) |decl| {

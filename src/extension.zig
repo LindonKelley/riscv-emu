@@ -122,19 +122,75 @@ pub fn verifyExtensionInstructions(extension_instructions: anytype) void {
                 }
             }
         } else {
-            if (!@hasDecl(field, "Ext") or !@hasDecl(field, "Id")) {
-                @compileError("Instructions must have Ext and Id declared: " ++ decl.name);
-            }
             const Instruction = field;
+            const inst_name = @typeName(Instruction);
+            if (!@hasDecl(field, "Ext") or !@hasDecl(field, "Id")) {
+                @compileError("Instructions must have Ext and Id declared: " ++ inst_name);
+            }
             if (Instruction.Ext.len < 1) {
                 @compileError("An Instruction's Ext field must contain a minimum XLEN {32, 64} followed by any " ++
-                    "other extensions that are required to implement them: " ++ decl.name);
+                    "other extensions that are required to implement them: " ++ inst_name);
             }
             if (!isOneOf(Instruction.Ext[0], .{ 32, 64 })) {
-                @compileError("An Instruction's first Ext field must start with either 32 or 64: " ++ decl.name);
+                @compileError("An Instruction's first Ext field must start with either 32 or 64: " ++ inst_name);
             }
-            if (Instruction.Id.len > 3) {
-                @compileError("An Instruction's Id must have at most 3 elements: " ++ decl.name);
+            if (!@hasDecl(Instruction, "execute")) {
+                @compileError("All Instructions must have an `execute` function: " ++ inst_name);
+            }
+            const instruction_execute_info = @typeInfo(@TypeOf(Instruction.execute));
+            if (instruction_execute_info != .Fn) {
+                @compileError("Instruction has declaration `execute` that is not a function: " ++ inst_name);
+            }
+            const instruction_execute = instruction_execute_info.Fn;
+            if (instruction_execute.params.len != 2) {
+                @compileError("Instructions.execute must have exactly two parameters: " ++ inst_name);
+            }
+            if (!instruction_execute.params[0].is_generic) {
+                @compileError("Instruction.execute's first parameter type must be `anytype`: " ++ inst_name);
+            }
+            if (instruction_execute.params[1].is_generic) {
+                @compileError("Instruction.execute's second parameter type must not be generic: " ++ inst_name);
+            }
+            if (instruction_execute.params[1].type == null) {
+                // I believe this can only be true if the parameter is generic, but there's no documentation there so
+                // I'll err on the side of caution
+                // also if that's the only time Param.type can be generic, I wonder why Zig didn't use a tagged union
+                @compileError("Instruction.execute's second parameter type must not be null: " ++ inst_name);
+            }
+            const InstructionFormat = @typeInfo(@TypeOf(Instruction.execute)).Fn.params[1].type.?;
+            if (!@hasDecl(InstructionFormat, "getFuncts")) {
+                @compileError("Instruction.execute's second parameter must be a valid instruction format, it's " ++
+                "missing the `getFuncts` function, see `inst_format.zig` for examples: " ++ inst_name);
+            }
+            const functs = InstructionFormat.getFuncts();
+            var functs_len = 0;
+            for (functs) |funct_optional| {
+                if (funct_optional == null) break;
+                functs_len += 1;
+            }
+            if (functs_len != Instruction.Id.len - 1) {
+                @compileError("InstructionFormat (as specified by Instruction.execute's second parameter) does not " ++
+                "match Instruction.Id. Instruction.Id should have an opcode, followed by the values specified by " ++
+                "the instruction corresponding to it's format, see `extension/I.zig` for examples: " ++ inst_name);
+            }
+            for (functs, 1..) |funct_optional, id_index| {
+                if (funct_optional == null) break;
+                const funct = funct_optional.?;
+                const cast = std.math.cast(funct.type, Instruction.Id[id_index]);
+                if (cast == null) {
+                    var buf: [32]u8 = undefined;
+                    const id_index_string = try std.fmt.bufPrint(&buf, "{d}", .{ id_index });
+                    @compileError("Instruction.Id[" ++ id_index_string ++ "] does not fit inside corresponding " ++
+                    "InstructionFormat funct type (" ++ @typeName(funct.type) ++ "): " ++ inst_name);
+                }
+            }
+            const instruction_execute_return_type_info = @typeInfo(instruction_execute.return_type.?);
+            if (instruction_execute_return_type_info != .Void) {
+                if (instruction_execute_return_type_info != .ErrorUnion) {
+                    @compileError("Instruction.execute must return either `void` or `!void`: " ++ inst_name);
+                } else if (instruction_execute_return_type_info.ErrorUnion.payload != void) {
+                    @compileError("Instruction.execute must return `void` as the error union payload: " ++ inst_name);
+                }
             }
         }
     }

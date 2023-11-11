@@ -178,24 +178,23 @@ pub fn Context(comptime HartContext: type, comptime Functions: ContextFunctions(
         /// executes the provided instruction, does not increment the program counter, jump/branch instructions
         /// will still change the program counter when appropriate.
         pub fn execute(context: @This(), inst: Data(32)) !void {
-            const Masking = packed struct { compressed: u2, op: u5, _1: u5, funct3: u3, _2: u10, funct7: u7 };
+            const Masking = packed struct { compressed: u2, op: u5, _: u25 };
             const cir: Masking = @bitCast(inst);
             if (cir.compressed != 0b11) return error.IllegalInstruction;
             const opcode_map = extension.getOpcodeMap();
             inline for (opcode_map, 0..) |Instructions, op| {
                 if (cir.op == op) {
-                    instructions_loop: inline for (Instructions) |Instruction_optional| {
+                    inline for (Instructions) |Instruction_optional| {
                         match: {
-                            // compiler tracks undefined so should be safe, right?
-                            if (Instruction_optional == null) break :instructions_loop;
+                            if (Instruction_optional == null) break;
                             const Instruction = Instruction_optional.?;
-                            if (Instruction.Id.len > 1 and Instruction.Id[1] != cir.funct3) break :match;
-                            if (op == @as(extension.OpcodeActual, @bitCast(opcode.SYSTEM)).op) {
-                                if (Instruction.Id[1] == funct3.PRIV and Instruction.Id[2] != @as(inst_format.ENV, @bitCast(cir)).funct12) {
-                                    break :match;
-                                }
-                            } else {
-                                if (Instruction.Id.len > 2 and Instruction.Id[2] != cir.funct7) break :match;
+                            const InstructionFormat = @typeInfo(@TypeOf(Instruction.execute)).Fn.params[1].type.?;
+                            const functs = InstructionFormat.getFuncts();
+                            inline for (functs, 1..) |funct_optional, id_index| {
+                                if (funct_optional == null) break;
+                                const funct = funct_optional.?;
+                                const cir_cast: InstructionFormat = @bitCast(cir);
+                                if (Instruction.Id[id_index] != @field(cir_cast, funct.name)) break :match;
                             }
                             //std.debug.print("executing instruction: {s:<20} {b:0>32}\n", .{ @typeName(Instruction), @as(u32, @bitCast(cir))});
                             if (@typeInfo(@TypeOf(Instruction.execute)).Fn.return_type == void) {

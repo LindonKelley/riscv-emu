@@ -21,7 +21,7 @@ pub fn SimpleHart(comptime P_XLEN: comptime_int, comptime Mmu: type) type {
     comptime {
         if (P_XLEN != 32 and P_XLEN != 64) {
             var buf: [32]u8 = undefined;
-            const XLEN_string = try std.fmt.bufPrint(&buf, "{d}", .{P_XLEN});
+            const XLEN_string = try std.fmt.bufPrint(&buf, "{d}", .{ P_XLEN });
             @compileError("Hart XLEN must be either 32 or 64, was " ++ XLEN_string);
         }
     }

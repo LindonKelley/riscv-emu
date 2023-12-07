@@ -54,6 +54,7 @@ pub const OpcodeActual = packed struct { _0: u2, op: u5 };
 
 // todo a parameter listing all available extensions
 pub fn getOpcodeMap() [32][getLargestOpcodeSpace()]?type {
+    // todo can be updated to match recursively over functs, for some potential speed gain
     const largest_opcode_space = getLargestOpcodeSpace();
     // compiler won't really let me do slice stuff at compile time, so opcode_map will be a rectangle instead
     var opcode_map: [32][largest_opcode_space]?type = .{.{null} ** largest_opcode_space} ** 32;
@@ -95,15 +96,15 @@ pub fn getLargestOpcodeSpace() comptime_int {
     return largest_opcode_space;
 }
 
-/// verifies the instructions listed in a file, ensuring they fit the format assumed by other functions in this
+/// verifies the extension in a file, ensuring they fit the format assumed by other functions in this
 /// library
-pub fn verifyExtensionInstructions(extension_instructions: anytype) void {
-    for (@typeInfo(extension_instructions).Struct.decls) |decl| {
-        const field = @field(extension_instructions, decl.name);
+pub fn verifyExtensionInstructions(extension: anytype) void {
+    for (@typeInfo(extension).Struct.decls) |decl| {
+        const field = @field(extension, decl.name);
         if (mem.eql(u8, decl.name, "Dependencies")) {
             const Dependencies = field;
             if (Dependencies.len == 0) {
-                @compileError("Dependencies list must be non-empty: " ++ extension_instructions);
+                @compileError("Dependencies list must be non-empty");
             }
             for (Dependencies, 0..) |dependency, i| {
                 const type_info = @typeInfo(@TypeOf(dependency));
@@ -120,6 +121,11 @@ pub fn verifyExtensionInstructions(extension_instructions: anytype) void {
                     // case insensitive."), makes reading the extension names a lot easier however
                     @compileError(dep_string ++ "must begin with one of [A-Z]");
                 }
+            }
+        } else if (mem.eql(u8, decl.name, "Requirements")) {
+            const Requirements = field;
+            if (@TypeOf(Requirements) != fn(comptime type) type) {
+                @compileError("Requirements must be of type `fn (comptime type) type`");
             }
         } else {
             const Instruction = field;

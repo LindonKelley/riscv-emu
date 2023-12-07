@@ -145,6 +145,7 @@ pub fn ContextFunctions(comptime HartContext: type) type {
         fence: *const fn(self: *HartContext, fm: u4, pred: FenceOperands, succ: FenceOperands) void,
         ecall: *const fn(self: *HartContext) void,
         ebreak: *const fn(self: *HartContext) void,
+        // extra_functions: HartContext.EXTRA_FUNCTIONS_TYPE,
         // fenceI: fn(self: *HartContext, inst: Data(32)) void, todo part of Zifencei
 
         fn loadDummy(self: *HartContext, comptime width: MemoryValueWidth, address: Int(.unsigned, XLEN)) mmu.LoadError!width.Data() {
@@ -161,13 +162,13 @@ pub fn ContextFunctions(comptime HartContext: type) type {
     };
 }
 
-// todo should have some listing of available extensions, with some way to get functions out of them (extension F will require more register functions)
-// todo ContextBuilder to avoid Function construction intermediate in Context creation
 pub fn Context(comptime HartContext: type, comptime Functions: ContextFunctions(HartContext)) type {
     return struct {
         pub const XLEN: comptime_int = HartContext.XLEN;
         pub const IALIGN: comptime_int = HartContext.IALIGN;
         pub const ILEN: comptime_int = HartContext.ILEN;
+        //pub const EXTS = HartContext.EXTS;
+        // todo some way to publically expose the functions from Functions with the convenience API provided by @this, usingnamespace?
 
         hart_ptr: *HartContext,
 

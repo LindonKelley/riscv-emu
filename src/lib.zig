@@ -1,4 +1,4 @@
-pub const SimpleHart = @import("hart.zig").SimpleHart;
+pub const hart_impls = @import("hart_impls.zig");
 pub const instruction = @import("instruction.zig");
 pub const inst_format = @import("inst_format.zig");
 pub const load = @import("load.zig");
@@ -24,7 +24,7 @@ pub fn main() !void {
 
 inline fn speed_test() !void {
     const mmu = @import("mmu.zig");
-    var hart = SimpleHart(32, mmu.BasicMmu(32)){ .mmu = .{} };
+    var hart = hart_impls.Simple(32, mmu.BasicMmu(32)){ .mmu = .{} };
     const inst = inst_format.I {
         .opcode = instruction.ADDI.ID[0],
         .rd = 3,
@@ -61,7 +61,7 @@ inline fn speed_test() !void {
 inline fn real_test() !void {
     const mmu = @import("mmu.zig");
     const print = std.debug.print;
-    var hart = SimpleHart(32, mmu.BasicMmu(32)){ .mmu = .{} };
+    var hart = hart_impls.Simple(32, mmu.BasicMmu(32)){ .mmu = .{} };
     const file_path = try assemble.elf("rv32i",
         \\ .global _start
         \\

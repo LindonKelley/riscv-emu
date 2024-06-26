@@ -50,9 +50,12 @@ pub const RequestedTrap = enum {
     ebreak,
 };
 
+pub const SpecificationStatus = enum { draft, frozen, ratified };
+
 pub const OpcodeActual = packed struct { _0: u2, op: u5 };
 
 // todo a parameter listing all available extensions
+// todo move this function to ExtensionSet, as well as the other three functions in this file that need information from extensions
 pub fn getOpcodeMap() [32][getLargestOpcodeSpace()]?type {
     // todo can be updated to match recursively over functs, for some potential speed gain
     const largest_opcode_space = getLargestOpcodeSpace();
@@ -61,15 +64,13 @@ pub fn getOpcodeMap() [32][getLargestOpcodeSpace()]?type {
     var indices = [_]usize{0} ** 32;
     // todo should iterate over all available extensions
     const ExtensionStruct = I;
-    for (@typeInfo(ExtensionStruct).Struct.decls) |decl| {
-        if (mem.eql(u8, decl.name, "Dependencies")) continue;
-        const field = @field(ExtensionStruct, decl.name);
-        if (@typeInfo(field) != .Struct) continue;
-        // todo does not restrict the Instruction search to available extensions
-        const Instruction = field;
-        const actual: OpcodeActual = @bitCast(Instruction.Id[0]);
-        opcode_map[actual.op][indices[actual.op]] = Instruction;
-        indices[actual.op] += 1;
+    if (@hasDecl(ExtensionStruct, "INSTRUCTIONS")) {
+        for (@typeInfo(ExtensionStruct.INSTRUCTIONS).Struct.decls) |inst_decl| {
+            const Instruction = @field(ExtensionStruct.INSTRUCTIONS, inst_decl.name);
+            const actual: OpcodeActual = @bitCast(Instruction.ID[0]);
+            opcode_map[actual.op][indices[actual.op]] = Instruction;
+            indices[actual.op] += 1;
+        }
     }
     return opcode_map;
 }
@@ -79,14 +80,12 @@ pub fn getLargestOpcodeSpace() comptime_int {
     var instructions_using_opcode = [_]u32{0} ** 32;
     // todo should iterate over all available extensions
     const ExtensionStruct = I;
-    for (@typeInfo(ExtensionStruct).Struct.decls) |decl| {
-        if (mem.eql(u8, decl.name, "Dependencies")) continue;
-        const field = @field(I, decl.name);
-        if (@typeInfo(field) != .Struct) continue;
-        // todo does not restrict the Instruction search to available extensions
-        const Instruction = field;
-        const actual: OpcodeActual = @bitCast(Instruction.Id[0]);
-        instructions_using_opcode[actual.op] += 1;
+    if (@hasDecl(ExtensionStruct, "INSTRUCTIONS")) {
+        for (@typeInfo(ExtensionStruct.INSTRUCTIONS).Struct.decls) |inst_decl| {
+            const Instruction = @field(ExtensionStruct.INSTRUCTIONS, inst_decl.name);
+            const actual: OpcodeActual = @bitCast(Instruction.ID[0]);
+            instructions_using_opcode[actual.op] += 1;
+        }
     }
 
     var largest_opcode_space = 0;
@@ -98,50 +97,53 @@ pub fn getLargestOpcodeSpace() comptime_int {
 
 /// verifies the extension in a file, ensuring they fit the format assumed by other functions in this
 /// library
-pub fn verifyExtensionInstructions(extension: anytype) void {
-    for (@typeInfo(extension).Struct.decls) |decl| {
-        const field = @field(extension, decl.name);
-        if (mem.eql(u8, decl.name, "Dependencies")) {
-            const Dependencies = field;
-            if (Dependencies.len == 0) {
-                @compileError("Dependencies list must be non-empty");
+pub fn verifyExtension(extension: anytype) void {
+    if (!@hasDecl(extension, "NAME")) {
+        @compileError("extensions must have NAME declared");
+    }
+    if (@typeInfo(@TypeOf(extension.NAME)) != .Pointer or @typeInfo(@typeInfo(@TypeOf(extension.NAME)).Pointer.child).Array.child != u8) {
+        @compileError("NAME must be a string");
+    }
+    if (extension.NAME.len < 1) {
+        @compileError("NAME must be non-empty");
+    }
+    if (extension.NAME[0] < 'A' or extension.NAME[0] > 'Z') {
+        // not actually part of the spec (the spec actually says the opposite "The ISA naming strings are
+        // case insensitive."), makes reading the extension names a lot easier however
+        @compileError("NAME must begin with one of [A-Z]");
+    }
+
+    if (@hasDecl(extension, "DEPENDENCIES")) {
+        const DEPENDENCIES = extension.DEPENDENCIES;
+        if (DEPENDENCIES.len == 0) {
+            @compileError("DEPENDENCIES list must be non-empty");
+        }
+        for (DEPENDENCIES, 0..) |dependency, i| {
+            const type_info = @typeInfo(@TypeOf(dependency));
+            var buf: [64]u8 = undefined;
+            const dep_string = try std.fmt.bufPrint(&buf, "DEPENDENCIES[{d}] ", .{i});
+            if (type_info != .Pointer or @typeInfo(type_info.Pointer.child).Array.child != u8) {
+                @compileError(dep_string ++ "must be a string, is " ++ @typeName(@TypeOf(dependency)));
             }
-            for (Dependencies, 0..) |dependency, i| {
-                const type_info = @typeInfo(@TypeOf(dependency));
-                var buf: [64]u8 = undefined;
-                const dep_string = try std.fmt.bufPrint(&buf, "Dependencies[{d}] ", .{ i });
-                if (type_info != .Pointer or @typeInfo(type_info.Pointer.child).Array.child != u8) {
-                    @compileError(dep_string ++ "is not a string, is " ++ @typeName(@TypeOf(dependency)));
-                }
-                if (dependency.len == 0) {
-                    @compileError(dep_string ++ "must be non-empty");
-                }
-                if (dependency[0] < 'A' or dependency[0] > 'Z') {
-                    // not actually part of the spec (the spec actually says the opposite "The ISA naming strings are
-                    // case insensitive."), makes reading the extension names a lot easier however
-                    @compileError(dep_string ++ "must begin with one of [A-Z]");
-                }
-            }
-        } else if (mem.eql(u8, decl.name, "Requirements")) {
-            const Requirements = field;
-            if (@TypeOf(Requirements) != fn(comptime type) type) {
-                @compileError("Requirements must be of type `fn (comptime type) type`");
-            }
-        } else {
-            const Instruction = field;
+        }
+    }
+
+    if (@hasDecl(extension, "INSTRUCTIONS")) {
+        for (@typeInfo(extension.INSTRUCTIONS).Struct.decls) |inst_decl| {
+            const Instruction = @field(extension.INSTRUCTIONS, inst_decl.name);
             const inst_name = @typeName(Instruction);
-            if (!@hasDecl(field, "Ext") or !@hasDecl(field, "Id")) {
-                @compileError("Instructions must have Ext and Id declared: " ++ inst_name);
+            if (!@hasDecl(Instruction, "EXT") or !@hasDecl(Instruction, "ID")) {
+                @compileError("INSTRUCTIONS must have EXT and ID declared: " ++ inst_name);
             }
-            if (Instruction.Ext.len < 1) {
-                @compileError("An Instruction's Ext field must contain a minimum XLEN {32, 64} followed by any " ++
+            if (Instruction.EXT.len < 1) {
+                @compileError("An Instruction's EXT field must contain a minimum XLEN {32, 64} followed by any " ++
                     "other extensions that are required to implement them: " ++ inst_name);
             }
-            if (!isOneOf(Instruction.Ext[0], .{ 32, 64 })) {
-                @compileError("An Instruction's first Ext field must start with either 32 or 64: " ++ inst_name);
+            if (!isOneOf(Instruction.EXT[0], .{ 32, 64 })) {
+                @compileError("An Instruction's first EXT field must start with either 32 or 64: " ++ inst_name);
             }
             if (!@hasDecl(Instruction, "execute")) {
-                @compileError("All Instructions must have an `execute` function: " ++ inst_name);
+                @compileError("All INSTRUCTIONS must have an `execute` function: " ++ inst_name);
             }
             const instruction_execute_info = @typeInfo(@TypeOf(Instruction.execute));
             if (instruction_execute_info != .Fn) {
@@ -149,7 +151,7 @@ pub fn verifyExtensionInstructions(extension: anytype) void {
             }
             const instruction_execute = instruction_execute_info.Fn;
             if (instruction_execute.params.len != 2) {
-                @compileError("Instructions.execute must have exactly two parameters: " ++ inst_name);
+                @compileError("Instruction.execute must have exactly two parameters: " ++ inst_name);
             }
             if (!instruction_execute.params[0].is_generic) {
                 @compileError("Instruction.execute's first parameter type must be `anytype`: " ++ inst_name);
@@ -166,7 +168,7 @@ pub fn verifyExtensionInstructions(extension: anytype) void {
             const InstructionFormat = @typeInfo(@TypeOf(Instruction.execute)).Fn.params[1].type.?;
             if (!@hasDecl(InstructionFormat, "getFuncts")) {
                 @compileError("Instruction.execute's second parameter must be a valid instruction format, it's " ++
-                "missing the `getFuncts` function, see `inst_format.zig` for examples: " ++ inst_name);
+                    "missing the `getFuncts` function, see `inst_format.zig` for examples: " ++ inst_name);
             }
             const functs = InstructionFormat.getFuncts();
             var functs_len = 0;
@@ -174,20 +176,20 @@ pub fn verifyExtensionInstructions(extension: anytype) void {
                 if (funct_optional == null) break;
                 functs_len += 1;
             }
-            if (functs_len != Instruction.Id.len - 1) {
+            if (functs_len != Instruction.ID.len - 1) {
                 @compileError("InstructionFormat (as specified by Instruction.execute's second parameter) does not " ++
-                "match Instruction.Id. Instruction.Id should have an opcode, followed by the values specified by " ++
-                "the instruction corresponding to it's format, see `extension/I.zig` for examples: " ++ inst_name);
+                    "match Instruction.ID. Instruction.ID should have an opcode, followed by the values specified by " ++
+                    "the instruction corresponding to it's format, see `extension/I.zig` for examples: " ++ inst_name);
             }
             for (functs, 1..) |funct_optional, id_index| {
                 if (funct_optional == null) break;
                 const funct = funct_optional.?;
-                const cast = std.math.cast(funct.type, Instruction.Id[id_index]);
+                const cast = std.math.cast(funct.type, Instruction.ID[id_index]);
                 if (cast == null) {
                     var buf: [32]u8 = undefined;
-                    const id_index_string = try std.fmt.bufPrint(&buf, "{d}", .{ id_index });
-                    @compileError("Instruction.Id[" ++ id_index_string ++ "] does not fit inside corresponding " ++
-                    "InstructionFormat funct type (" ++ @typeName(funct.type) ++ "): " ++ inst_name);
+                    const id_index_string = try std.fmt.bufPrint(&buf, "{d}", .{id_index});
+                    @compileError("Instruction.ID[" ++ id_index_string ++ "] does not fit inside corresponding " ++
+                        "InstructionFormat funct type (" ++ @typeName(funct.type) ++ "): " ++ inst_name);
                 }
             }
             const instruction_execute_return_type_info = @typeInfo(instruction_execute.return_type.?);

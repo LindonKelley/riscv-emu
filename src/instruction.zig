@@ -194,7 +194,7 @@ pub fn Context(comptime HartContext: type, comptime Functions: ContextFunctions(
                                 if (funct_optional == null) break;
                                 const funct = funct_optional.?;
                                 const cir_cast: InstructionFormat = @bitCast(cir);
-                                if (Instruction.Id[id_index] != @field(cir_cast, funct.name)) break :match;
+                                if (Instruction.ID[id_index] != @field(cir_cast, funct.name)) break :match;
                             }
                             //std.debug.print("executing instruction: {s:<20} {b:0>32}\n", .{ @typeName(Instruction), @as(u32, @bitCast(cir))});
                             if (@typeInfo(@TypeOf(Instruction.execute)).Fn.return_type == void) {

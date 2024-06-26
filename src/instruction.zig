@@ -187,8 +187,7 @@ pub fn Context(comptime HartContext: type, comptime Functions: ContextFunctions(
                 if (cir.op == op) {
                     inline for (Instructions) |Instruction_optional| {
                         match: {
-                            if (Instruction_optional == null) break;
-                            const Instruction = Instruction_optional.?;
+                            const Instruction = Instruction_optional orelse break;
                             const InstructionFormat = @typeInfo(@TypeOf(Instruction.execute)).Fn.params[1].type.?;
                             const functs = InstructionFormat.getFuncts();
                             inline for (functs, 1..) |funct_optional, id_index| {

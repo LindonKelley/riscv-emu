@@ -27,6 +27,8 @@ comptime {
     std.testing.refAllDeclsRecursive(@This());
 }
 
+// todo section all of the instructions off into an internal Instructions struct
+
 /// ADD Immediate
 ///
 /// x[`rd`] = x[`rs1`] +% signExtend(`imm`)

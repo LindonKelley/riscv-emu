@@ -17,6 +17,10 @@ const RequestedTrap = extension.RequestedTrap;
 /// `P_XLEN` is the Register and Program Counter width, and is the limiting factor on how much memory the
 ///  Hart can immediately address
 // P_XLEN would just be XLEN if the shadowing rules allowed it
+// todo needs to receive potential implementation overrides for functions from extensions
+// todo above unlikely, instead Hart implementations don't have their own ticking function, and just expose all functions needed to be called by any external one
+// todo needs function that exposes which extensions are supported, and likely also their versions
+// todo above may not be necessary if the exposed functions that are needed to implement an extension are standard across all hart impls
 pub fn Hart(comptime P_XLEN: comptime_int, comptime Mmu: type) type {
     comptime {
         if (P_XLEN != 32 and P_XLEN != 64) {
@@ -49,9 +53,7 @@ pub fn Hart(comptime P_XLEN: comptime_int, comptime Mmu: type) type {
         // extra_fields = getExtraFields(EXTS),
 
         /// Completes one instruction cycle, errors returned are intended to be treated as either
-        ///  invisible or fatal traps. This function assumes that requested traps only come from within the execution
-        ///  environment, any calls to Hart.ecall and Hart.ebreak outside of executing instructions have no guaranteed
-        ///  effects.
+        ///  invisible or fatal traps.
         pub fn tick(self: *@This()) TickError!?RequestedTrap {
             // todo not sure about the try, in terms of if that's the correct error for a hart to return on a failed fetch
             const inst = try self.load(.word, self.pc);
@@ -151,38 +153,10 @@ pub fn Hart(comptime P_XLEN: comptime_int, comptime Mmu: type) type {
     };
 }
 
-// todo dependency checking and possibly automatically adding them (according to RISC-V spec)
-fn ExtensionSet(comptime extensions: anytype) type {
-    const Type = std.builtin.Type;
-    var fields = [_]Type.StructField { undefined } ** extensions.len;
-    for (extensions, &fields) |ext, *field| {
-        var splitter = std.mem.splitBackwardsScalar(u8, @typeName(ext), '.');
-        field.* = .{
-            .name = splitter.next().?,
-            .type = type,
-            .default_value = @alignCast(@ptrCast(&ext)),
-            .is_comptime = true,
-            .alignment = @alignOf(type)
-        };
-    }
-    const Exts = .{ .Struct = .{
-        .layout = .Auto,
-        .backing_integer = null,
-        .fields = &fields,
-        .decls = &[_]Type.Declaration {},
-        .is_tuple = false
-    }};
-    return @Type(Exts);
-}
-
 fn getExtraFunctions(comptime extension_set: anytype) type {
     _ = extension_set;
     // todo returns a struct of extension functions (like ifence)
     return void;
 }
 
-fn getExtraFields(comptime extension_set: anytype) type {
-    _ = extension_set;
-    // todo returns a struct of extension fields (like the floating pointer registers)
-    return void;
-}
+// todo ifence function implementation within a struct, the struct will be directly usable by the function above

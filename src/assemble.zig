@@ -13,7 +13,7 @@ pub fn elf(arch: []const u8, assembly: []const u8) ![absoluteFilePathLength("")]
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
-    var allocator = arena.allocator();
+    const allocator = arena.allocator();
 
     return elf_unmanaged(arch, assembly, allocator);
 }
@@ -22,7 +22,7 @@ pub fn elf(arch: []const u8, assembly: []const u8) ![absoluteFilePathLength("")]
 /// `arch` is used to specify the ISA naming string, and must be all lowercase, the base values are "rv32i" or "rv64i".
 ///
 /// If you do not care about which allocator is used, use `elf` instead.
-/// This function currently requires a linux system with `riscv64-elf-binutils` installed.
+/// This function currently requires a linux system with `riscv64-elf-binutils` (or coreboot-toolchain.riscv on Nix) installed.
 pub fn elf_unmanaged(arch: []const u8, assembly: []const u8, allocator: std.mem.Allocator) ![absoluteFilePathLength("")] u8 {
     const assembler_output_file_path = try mktemp(allocator, TEMP_FILE_TEMPLATE ++ ".o");
     defer std.fs.deleteFileAbsolute(&assembler_output_file_path) catch |err| {
@@ -64,7 +64,7 @@ pub fn raw(arch: []const u8, assembly: []const u8) ![absoluteFilePathLength(".bi
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
-    var allocator = arena.allocator();
+    const allocator = arena.allocator();
 
     return raw_unmanaged(arch, assembly, allocator);
 }

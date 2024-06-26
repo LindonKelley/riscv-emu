@@ -97,7 +97,7 @@ inline fn real_test() !void {
 comptime {
     const builtin = @import("builtin");
     const native_endian = builtin.cpu.arch.endian();
-    if (native_endian == .Big) {
+    if (native_endian == .big) {
         // todo big endian host systems are not properly handled
         @panic("this library does not currently support big endian host systems");
         // todo big endian Harts/Mmus are not properly supported

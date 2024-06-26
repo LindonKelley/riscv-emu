@@ -36,7 +36,7 @@ pub fn BasicMmu(comptime XLEN: comptime_int) type {
         pub fn load(self: *@This(), comptime width: MemoryValueWidth, address: Int(.unsigned, XLEN)) LoadError!width.Data() {
             if (address % width.bytes() == 0) {
                 const ptr = self.memory[address..];
-                return .{ .unsigned = std.mem.readIntNative(width.Unsigned(), ptr[0..width.bytes()]) };
+                return .{ .unsigned = @bitCast(ptr[0..width.bytes()].*) };
             } else {
                 return error.LoadAddressMisaligned;
             }
@@ -45,7 +45,7 @@ pub fn BasicMmu(comptime XLEN: comptime_int) type {
         pub fn store(self: *@This(), comptime width: MemoryValueWidth, address: Int(.unsigned, XLEN), data: width.Data()) StoreError!void {
             if (address % width.bytes() == 0) {
                 const ptr = self.memory[address..];
-                std.mem.writeIntNative(width.Unsigned(), ptr[0..width.bytes()], data.unsigned);
+                ptr[0..width.bytes()].* = @bitCast(data.unsigned);
             } else {
                 return error.StoreAddressMisaligned;
             }

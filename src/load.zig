@@ -8,7 +8,7 @@ const FixedBufferStream = std.io.FixedBufferStream;
 // making it a personal goal to avoid allocating in this function, later I may add an allocating version
 pub fn elf(hart_ptr: anytype, file: anytype) !void {
     const header = try std.elf.Header.read(file);
-    if (header.endian != .Little) {
+    if (header.endian != .little) {
         // todo I don't want to require this, and hart implementations should be allowed to specify supported endianness
         return error.ElfNotLittleEndian;
     }

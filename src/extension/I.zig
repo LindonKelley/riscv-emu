@@ -27,6 +27,8 @@ comptime {
     std.testing.refAllDeclsRecursive(@This());
 }
 
+// todo instruction formats may be moved into their specifying extensions, along with specifying an E extension override for those formats as the
+//  E extension cuts one bit out of every register use in instructions and reserves the instruction space gained from that
 // todo extensions can specify overrides, conflicts, dependencies and required(name?) data/functions
 pub const NAME = "I";
 pub const VERSION = "2.1";

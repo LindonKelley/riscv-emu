@@ -1,3 +1,5 @@
+//! Simple Hart implementation, reference implementation with extendability and readability as primary goals
+
 const std = @import("std");
 const inst_format = @import("../inst_format.zig");
 const instruction = @import("../instruction.zig");

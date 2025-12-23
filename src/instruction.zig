@@ -188,8 +188,8 @@ pub fn Context(comptime HartContext: type, comptime Functions: ContextFunctions(
                     inline for (Instructions) |Instruction_optional| {
                         match: {
                             const Instruction = Instruction_optional orelse break;
-                            const InstructionFormat = @typeInfo(@TypeOf(Instruction.execute)).Fn.params[1].type.?;
-                            const functs = InstructionFormat.getFuncts();
+                            const InstructionFormat = @typeInfo(@TypeOf(Instruction.execute)).@"fn".params[1].type.?;
+                            const functs = InstructionFormat.Functs.get();
                             inline for (functs, 1..) |funct_optional, id_index| {
                                 if (funct_optional == null) break;
                                 const funct = funct_optional.?;
@@ -197,7 +197,7 @@ pub fn Context(comptime HartContext: type, comptime Functions: ContextFunctions(
                                 if (Instruction.ID[id_index] != @field(cir_cast, funct.name)) break :match;
                             }
                             //std.debug.print("executing instruction: {s:<20} {b:0>32}\n", .{ @typeName(Instruction), @as(u32, @bitCast(cir))});
-                            if (@typeInfo(@TypeOf(Instruction.execute)).Fn.return_type == void) {
+                            if (@typeInfo(@TypeOf(Instruction.execute)).@"fn".return_type == void) {
                                 Instruction.execute(context, @bitCast(cir));
                             } else {
                                 try Instruction.execute(context, @bitCast(cir));

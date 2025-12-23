@@ -1,13 +1,10 @@
 const std = @import("std");
 const FixedBufferStream = std.io.FixedBufferStream;
 
-/// Immediately loads an ELF file into the given Hart, and sets the program counter to the file's entry point.
-/// The caller must ensure the ELF file is an executable.
-///
-/// This function does not close the file.
+/// Attempts to parse the provided file reader into ELF data and loads as appropriate into the provided Hart, and sets the program counter to the program's entry point.
 // making it a personal goal to avoid allocating in this function, later I may add an allocating version
-pub fn elf(hart_ptr: anytype, file: anytype) !void {
-    const header = try std.elf.Header.read(file);
+pub fn elf(hart_ptr: anytype, reader: *std.fs.File.Reader) !void {
+    const header = try std.elf.Header.read(&reader.interface);
     if (header.endian != .little) {
         // todo I don't want to require this, and hart implementations should be allowed to specify supported endianness
         return error.ElfNotLittleEndian;
@@ -19,15 +16,16 @@ pub fn elf(hart_ptr: anytype, file: anytype) !void {
         return error.ElfHeaderHartIncompatibleXlen;
     }
 
-    var program_header_iter = header.program_header_iterator(file);
+    var program_header_iter = header.iterateProgramHeaders(reader);
     while (try program_header_iter.next()) |program_header| {
         switch (program_header.p_type) {
             std.elf.PT_LOAD => {
-                try file.seekableStream().seekTo(program_header.p_offset);
+                try reader.seekTo(program_header.p_offset);
+                var data: u8 = undefined;
                 for (0..program_header.p_filesz) |offset| {
-                    // todo should probably try loading more of the file at once
-                    var data: u8 = undefined;
-                    try file.reader().readNoEof(std.mem.asBytes(&data));
+                    // todo migrate to using the mmu writer once that is implemented
+                    //  alternatively, receive the writer instead of the hart_ptr and make this function return the program counter offset from the writer start
+                    try reader.interface.readSliceAll(std.mem.asBytes(&data));
                     try hart_ptr.store(.byte, @intCast(program_header.p_vaddr + offset), .{ .unsigned = data });
                 }
                 for (program_header.p_filesz..program_header.p_memsz) |offset| {
@@ -49,12 +47,12 @@ pub fn elf(hart_ptr: anytype, file: anytype) !void {
     hart_ptr.setPc(@intCast(header.entry));
 }
 
-/// Immediately loads a raw binary from the given reader into the given Hart, starting at address 0, and sets
+/// Loads a raw binary from the given reader into the given Hart, starting at address 0, and sets
 ///  the program counter to 0
 /// The caller must ensure the reader is reading raw machine code.
 ///
 /// This function does not close the file.
-pub fn raw(hart_ptr: anytype, reader: anytype) !void {
+pub fn raw(hart_ptr: anytype, reader: *std.io.Reader) !void {
     var address: std.meta.Int(.unsigned, @TypeOf(hart_ptr.*).XLEN) = 0;
     while (true) {
         var data: [@sizeOf(u64)]u8 = undefined;

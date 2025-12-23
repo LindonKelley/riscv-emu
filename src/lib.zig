@@ -6,7 +6,7 @@ pub const assemble = @import("assemble.zig");
 pub const Data = @import("data.zig").Data;
 
 comptime {
-    for (@typeInfo(@This()).Struct.decls) |decl| {
+    for (@typeInfo(@This()).@"struct".decls) |decl| {
         _ = @field(@This(), decl.name);
     }
     const extension = @import("extension.zig");
@@ -24,11 +24,12 @@ pub fn main() !void {
 
 inline fn speed_test() !void {
     const mmu = @import("mmu.zig");
+    const extension = @import("extension.zig");
     var hart = hart_impls.Simple(32, mmu.BasicMmu(32)){ .mmu = .{} };
     const inst = inst_format.I {
-        .opcode = instruction.ADDI.ID[0],
+        .opcode = extension.I.INSTRUCTIONS.ADDI.ID[0],
         .rd = 3,
-        .funct3 = instruction.ADDI.ID[1],
+        .funct3 = extension.I.INSTRUCTIONS.ADDI.ID[1],
         .rs1 = 3,
         .imm0 = 1
     };
@@ -40,11 +41,12 @@ inline fn speed_test() !void {
     for (0..12) |lap| {
         var timer = try Timer.start();
         for (0..1000) |_| {
-            hart.setPC(0);
-            hart.setXRegister(3, @as(u32, 0));
+            hart.setPc(0);
+            hart.setXRegister(3, Data(32) { .unsigned = 0 });
             for (0..100) |i| {
-                try expectEqual(i, hart.getXRegister(.unsigned, 3));
-                try hart.tick();
+                try expectEqual(i, hart.getXRegister(3).unsigned);
+                const trap_optional = try hart.tick();
+                std.debug.assert(trap_optional == null);
             }
         }
         times[lap] = timer.lap();
@@ -74,7 +76,10 @@ inline fn real_test() !void {
         \\
     );
     const file = try std.fs.openFileAbsolute(&file_path, .{});
-    try load.elf(&hart, file);
+    // std.elf.Header.read contains a seek call that requires a buffer
+    var buf: [@sizeOf(std.elf.Elf64_Ehdr)]u8 = undefined;
+    var reader = file.reader(&buf);
+    try load.elf(&hart, &reader);
     file.close();
     try hart.store(.halfword, 512, .{ .unsigned = 1 });
     try hart.store(.halfword, 516, .{ .unsigned = 2 });

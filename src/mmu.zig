@@ -51,7 +51,7 @@ pub fn BasicMmu(comptime XLEN: comptime_int) type {
             }
         }
         
-        // todo fn store_slice, a function should exist in this file that naively implements this via repeat store calls
+        // todo implement std.Io Reader and Writer, reflect this capability in Hart
 
         pub fn fence(self: *@This(), fm: u4, pred: FenceOperands, succ: FenceOperands) void {
             // intentional no-op on this MMU

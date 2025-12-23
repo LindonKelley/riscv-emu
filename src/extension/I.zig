@@ -48,8 +48,8 @@ pub const INSTRUCTIONS = struct {
         pub fn execute(context: anytype, inst: inst_format.I) void {
             const arch = hart_arch(@TypeOf(context));
             const src = context.getXRegister(inst.rs1).signed;
-            const imm = inst.getImmediate().signExtended(arch.XLEN).signed;
-            const res = .{ .signed = src +% imm };
+            const imm = inst.immediate.get().signExtended(arch.XLEN).signed;
+            const res: Data(arch.XLEN) = .{ .signed = src +% imm };
             context.setXRegister(inst.rd, res);
         }
 
@@ -102,8 +102,8 @@ pub const INSTRUCTIONS = struct {
         pub fn execute(context: anytype, inst: inst_format.I) void {
             const arch = hart_arch(@TypeOf(context));
             const src = context.getXRegister(inst.rs1).signed;
-            const imm = inst.getImmediate().signExtended(arch.XLEN).signed;
-            const res = .{ .unsigned = if (src < imm) @as(arch.usize, 1) else @as(arch.usize, 0) };
+            const imm = inst.immediate.get().signExtended(arch.XLEN).signed;
+            const res: Data(arch.XLEN) = .{ .unsigned = if (src < imm) @as(arch.usize, 1) else @as(arch.usize, 0) };
             context.setXRegister(inst.rd, res);
         }
     };
@@ -119,8 +119,8 @@ pub const INSTRUCTIONS = struct {
         pub fn execute(context: anytype, inst: inst_format.I) void {
             const arch = hart_arch(@TypeOf(context));
             const src = context.getXRegister(inst.rs1).unsigned;
-            const imm = inst.getImmediate().signExtended(arch.XLEN).unsigned;
-            const res = .{ .unsigned = if (src < imm) @as(arch.usize, 1) else @as(arch.usize, 0) };
+            const imm = inst.immediate.get().signExtended(arch.XLEN).unsigned;
+            const res: Data(arch.XLEN) = .{ .unsigned = if (src < imm) @as(arch.usize, 1) else @as(arch.usize, 0) };
             context.setXRegister(inst.rd, res);
         }
     };
@@ -136,8 +136,8 @@ pub const INSTRUCTIONS = struct {
         pub fn execute(context: anytype, inst: inst_format.I) void {
             const arch = hart_arch(@TypeOf(context));
             const src = context.getXRegister(inst.rs1).signed;
-            const imm = inst.getImmediate().signExtended(arch.XLEN).signed;
-            const res = .{ .signed = src & imm };
+            const imm = inst.immediate.get().signExtended(arch.XLEN).signed;
+            const res: Data(arch.XLEN) = .{ .signed = src & imm };
             context.setXRegister(inst.rd, res);
         }
     };
@@ -153,8 +153,8 @@ pub const INSTRUCTIONS = struct {
         pub fn execute(context: anytype, inst: inst_format.I) void {
             const arch = hart_arch(@TypeOf(context));
             const src = context.getXRegister(inst.rs1).signed;
-            const imm = inst.getImmediate().signExtended(arch.XLEN).signed;
-            const res = .{ .signed = src | imm };
+            const imm = inst.immediate.get().signExtended(arch.XLEN).signed;
+            const res: Data(arch.XLEN) = .{ .signed = src | imm };
             context.setXRegister(inst.rd, res);
         }
     };
@@ -171,8 +171,8 @@ pub const INSTRUCTIONS = struct {
         pub fn execute(context: anytype, inst: inst_format.I) void {
             const arch = hart_arch(@TypeOf(context));
             const src = context.getXRegister(inst.rs1).signed;
-            const imm = inst.getImmediate().signExtended(arch.XLEN).signed;
-            const res = .{ .signed = src ^ imm };
+            const imm = inst.immediate.get().signExtended(arch.XLEN).signed;
+            const res: Data(arch.XLEN) = .{ .signed = src ^ imm };
             context.setXRegister(inst.rd, res);
         }
     };
@@ -186,8 +186,9 @@ pub const INSTRUCTIONS = struct {
         pub const ID = .{ opcode.OP_IMM, funct3.SLLI, 0b000_0000 };
 
         pub fn execute(context: anytype, inst: inst_format.IS) void {
+            const arch = hart_arch(@TypeOf(context));
             const src = context.getXRegister(inst.rs1).unsigned;
-            const res = .{ .unsigned = src << inst.shamt };
+            const res: Data(arch.XLEN) = .{ .unsigned = src << inst.shamt };
             context.setXRegister(inst.rd, res);
         }
     };
@@ -201,8 +202,9 @@ pub const INSTRUCTIONS = struct {
         pub const ID = .{ opcode.OP_IMM, funct3.SRLI, 0b000_0000 };
 
         pub fn execute(context: anytype, inst: inst_format.IS) void {
+            const arch = hart_arch(@TypeOf(context));
             const src = context.getXRegister(inst.rs1).unsigned;
-            const res = .{ .unsigned = src >> inst.shamt };
+            const res: Data(arch.XLEN) = .{ .unsigned = src >> inst.shamt };
             context.setXRegister(inst.rd, res);
         }
     };
@@ -216,8 +218,9 @@ pub const INSTRUCTIONS = struct {
         pub const ID = .{ opcode.OP_IMM, funct3.SRAI, 0b000_0010 };
 
         pub fn execute(context: anytype, inst: inst_format.IS) void {
+            const arch = hart_arch(@TypeOf(context));
             const src = context.getXRegister(inst.rs1).signed;
-            const res = .{ .signed = src >> inst.shamt };
+            const res: Data(arch.XLEN) = .{ .signed = src >> inst.shamt };
             context.setXRegister(inst.rd, res);
         }
     };
@@ -231,8 +234,9 @@ pub const INSTRUCTIONS = struct {
         pub const ID = .{opcode.LUI};
 
         pub fn execute(context: anytype, inst: inst_format.U) void {
-            const imm = inst.getImmediate().unsigned;
-            const res = .{ .unsigned = imm };
+            const arch = hart_arch(@TypeOf(context));
+            const imm = inst.immediate.get().unsigned;
+            const res: Data(arch.XLEN) = .{ .unsigned = imm };
             context.setXRegister(inst.rd, res);
         }
     };
@@ -246,9 +250,10 @@ pub const INSTRUCTIONS = struct {
         pub const ID = .{opcode.AUIPC};
 
         pub fn execute(context: anytype, inst: inst_format.U) void {
-            const imm = inst.getImmediate().unsigned;
+            const arch = hart_arch(@TypeOf(context));
+            const imm = inst.immediate.get().unsigned;
             const pc = context.getPc();
-            const res = .{ .unsigned = pc +% imm };
+            const res: Data(arch.XLEN) = .{ .unsigned = pc +% imm };
             context.setXRegister(inst.rd, res);
         }
     };
@@ -265,7 +270,7 @@ pub const INSTRUCTIONS = struct {
             const arch = hart_arch(@TypeOf(context));
             const src1 = context.getXRegister(inst.rs1).signExtended(arch.XLEN).signed;
             const src2 = context.getXRegister(inst.rs2).signExtended(arch.XLEN).signed;
-            const res = .{ .signed = src1 +% src2 };
+            const res: Data(arch.XLEN) = .{ .signed = src1 +% src2 };
             context.setXRegister(inst.rd, res);
         }
     };
@@ -282,7 +287,7 @@ pub const INSTRUCTIONS = struct {
             const arch = hart_arch(@TypeOf(context));
             const src1 = context.getXRegister(inst.rs1).signed;
             const src2 = context.getXRegister(inst.rs2).signed;
-            const res = .{ .unsigned = if (src1 < src2) @as(arch.usize, 1) else @as(arch.usize, 0) };
+            const res: Data(arch.XLEN) = .{ .unsigned = if (src1 < src2) @as(arch.usize, 1) else @as(arch.usize, 0) };
             context.setXRegister(inst.rd, res);
         }
     };
@@ -300,7 +305,7 @@ pub const INSTRUCTIONS = struct {
             const arch = hart_arch(@TypeOf(context));
             const src1 = context.getXRegister(inst.rs1).unsigned;
             const src2 = context.getXRegister(inst.rs2).unsigned;
-            const res = .{ .unsigned = if (src1 < src2) @as(arch.usize, 1) else @as(arch.usize, 0) };
+            const res: Data(arch.XLEN) = .{ .unsigned = if (src1 < src2) @as(arch.usize, 1) else @as(arch.usize, 0) };
             context.setXRegister(inst.rd, res);
         }
     };
@@ -314,9 +319,10 @@ pub const INSTRUCTIONS = struct {
         pub const ID = .{ opcode.OP, funct3.AND, 0b000_0000 };
 
         pub fn execute(context: anytype, inst: inst_format.R) void {
+            const arch = hart_arch(@TypeOf(context));
             const src1 = context.getXRegister(inst.rs1).unsigned;
             const src2 = context.getXRegister(inst.rs2).unsigned;
-            const res = .{ .unsigned = src1 & src2 };
+            const res: Data(arch.XLEN) = .{ .unsigned = src1 & src2 };
             context.setXRegister(inst.rd, res);
         }
     };
@@ -330,9 +336,10 @@ pub const INSTRUCTIONS = struct {
         pub const ID = .{ opcode.OP, funct3.OR, 0b000_0000 };
 
         pub fn execute(context: anytype, inst: inst_format.R) void {
+            const arch = hart_arch(@TypeOf(context));
             const src1 = context.getXRegister(inst.rs1).unsigned;
             const src2 = context.getXRegister(inst.rs2).unsigned;
-            const res = .{ .unsigned = src1 | src2 };
+            const res: Data(arch.XLEN) = .{ .unsigned = src1 | src2 };
             context.setXRegister(inst.rd, res);
         }
     };
@@ -346,9 +353,10 @@ pub const INSTRUCTIONS = struct {
         pub const ID = .{ opcode.OP, funct3.XOR, 0b000_0000 };
 
         pub fn execute(context: anytype, inst: inst_format.R) void {
+            const arch = hart_arch(@TypeOf(context));
             const src1 = context.getXRegister(inst.rs1).unsigned;
             const src2 = context.getXRegister(inst.rs2).unsigned;
-            const res = .{ .unsigned = src1 ^ src2 };
+            const res: Data(arch.XLEN) = .{ .unsigned = src1 ^ src2 };
             context.setXRegister(inst.rd, res);
         }
     };
@@ -362,9 +370,10 @@ pub const INSTRUCTIONS = struct {
         pub const ID = .{ opcode.OP, funct3.SLL, 0b000_0000 };
 
         pub fn execute(context: anytype, inst: inst_format.R) void {
+            const arch = hart_arch(@TypeOf(context));
             const src1 = context.getXRegister(inst.rs1).unsigned;
             const src2 = context.getXRegister(inst.rs2).truncated(5).unsigned;
-            const res = .{ .unsigned = src1 << src2 };
+            const res: Data(arch.XLEN) = .{ .unsigned = src1 << src2 };
             context.setXRegister(inst.rd, res);
         }
     };
@@ -378,9 +387,10 @@ pub const INSTRUCTIONS = struct {
         pub const ID = .{ opcode.OP, funct3.SRL, 0b000_0000 };
 
         pub fn execute(context: anytype, inst: inst_format.R) void {
+            const arch = hart_arch(@TypeOf(context));
             const src1 = context.getXRegister(inst.rs1).unsigned;
             const src2 = context.getXRegister(inst.rs2).truncated(5).unsigned;
-            const res = .{ .unsigned = src1 >> src2 };
+            const res: Data(arch.XLEN) = .{ .unsigned = src1 >> src2 };
             context.setXRegister(inst.rd, res);
         }
     };
@@ -394,9 +404,10 @@ pub const INSTRUCTIONS = struct {
         pub const ID = .{ opcode.OP, funct3.SUB, 0b000_0010 };
 
         pub fn execute(context: anytype, inst: inst_format.R) void {
+            const arch = hart_arch(@TypeOf(context));
             const src1 = context.getXRegister(inst.rs1).unsigned;
             const src2 = context.getXRegister(inst.rs2).unsigned;
-            const res = .{ .unsigned = src1 -% src2 };
+            const res: Data(arch.XLEN) = .{ .unsigned = src1 -% src2 };
             context.setXRegister(inst.rd, res);
         }
     };
@@ -410,9 +421,10 @@ pub const INSTRUCTIONS = struct {
         pub const ID = .{ opcode.OP, funct3.SRA, 0b000_0010 };
 
         pub fn execute(context: anytype, inst: inst_format.R) void {
+            const arch = hart_arch(@TypeOf(context));
             const src1 = context.getXRegister(inst.rs1).signed;
             const src2 = context.getXRegister(inst.rs2).truncated(5).unsigned;
-            const res = .{ .signed = src1 >> src2 };
+            const res: Data(arch.XLEN) = .{ .signed = src1 >> src2 };
             context.setXRegister(inst.rd, res);
         }
     };
@@ -430,7 +442,7 @@ pub const INSTRUCTIONS = struct {
 
         pub fn execute(context: anytype, inst: inst_format.J) JumpError!void {
             const arch = hart_arch(@TypeOf(context));
-            const imm = inst.getImmediate().signExtended(arch.XLEN).unsigned;
+            const imm = inst.immediate.get().signExtended(arch.XLEN).unsigned;
             const pc = context.getPc();
             const pc_set = pc +% imm;
             if (arch.IALIGN != 16 and pc_set % 4 != 0) {
@@ -455,7 +467,7 @@ pub const INSTRUCTIONS = struct {
         pub fn execute(context: anytype, inst: inst_format.I) JumpError!void {
             const arch = hart_arch(@TypeOf(context));
             const src = context.getXRegister(inst.rs1).signed;
-            const imm = inst.getImmediate().signExtended(arch.XLEN).signed;
+            const imm = inst.immediate.get().signExtended(arch.XLEN).signed;
             const pc = context.getPc();
             const pc_set: arch.usize = @bitCast((src +% imm) & 0b10);
             if (@TypeOf(context).IALIGN != 16 and pc_set % 4 != 0) {
@@ -487,7 +499,7 @@ pub const INSTRUCTIONS = struct {
         };
         if (condition) {
             const pc = context.getPc();
-            const imm = inst.getImmediate().signExtended(arch.XLEN).unsigned;
+            const imm = inst.immediate.get().signExtended(arch.XLEN).unsigned;
             const pc_set = pc +% imm;
             if (arch.IALIGN != 16 and pc_set % 4 != 0) {
                 return error.InstructionAddressMisaligned;
@@ -594,7 +606,7 @@ pub const INSTRUCTIONS = struct {
     inline fn load_execute(context: anytype, inst: inst_format.I, comptime width: mmu.MemoryValueWidth, comptime signedness: Signedness) mmu.LoadError!void {
         const arch = hart_arch(@TypeOf(context));
         const base = context.getXRegister(inst.rs1).unsigned;
-        const imm = inst.getImmediate().signExtended(arch.XLEN).unsigned;
+        const imm = inst.immediate.get().signExtended(arch.XLEN).unsigned;
         const addr = base +% imm;
         const data = try context.load(width, addr);
         const res = switch (signedness) {
@@ -672,7 +684,7 @@ pub const INSTRUCTIONS = struct {
     inline fn store_execute(context: anytype, inst: inst_format.S, comptime width: mmu.MemoryValueWidth) mmu.StoreError!void {
         const arch = hart_arch(@TypeOf(context));
         const base = context.getXRegister(inst.rs1).unsigned;
-        const imm = inst.getImmediate().signExtended(arch.XLEN).unsigned;
+        const imm = inst.immediate.get().signExtended(arch.XLEN).unsigned;
         const addr = base +% imm;
         const src = context.getXRegister(inst.rs2).truncated(width.bits());
         try context.store(width, addr, src);
@@ -772,7 +784,7 @@ pub const INSTRUCTIONS = struct {
         pub fn execute(context: anytype, inst: inst_format.I) void {
             const arch = hart_arch(@TypeOf(context));
             const src = context.getXRegister(inst.rs1).truncated(32).signed;
-            const imm = inst.getImmediate().signExtended(32).signed;
+            const imm = inst.immediate.get().signExtended(32).signed;
             const res = (Data(32){ .signed = src +% imm }).signExtended(arch.XLEN);
             context.setXRegister(inst.rd, res);
         }

@@ -18,7 +18,9 @@ pub const R = packed struct {
     rs2: u5,
     funct7: u7,
 
-    pub usingnamespace helpers(@This());
+    immediate: ImmediateMixin(@This()),
+
+    pub const Functs = FunctMixin(@This());
 };
 
 pub const I = packed struct {
@@ -28,9 +30,10 @@ pub const I = packed struct {
     rs1: u5,
     imm0: u12,
 
-    pub const Conversion = packed struct { imm0: u12 };
+    immediate: ImmediateMixin(@This()) = .{},
 
-    pub usingnamespace helpers(@This());
+    pub const Functs = FunctMixin(@This());
+    pub const Conversion = packed struct { imm0: u12 };
 };
 
 /// specialization of the I format for shift immediate instructions such as SLLI, SRLI, and SRAI
@@ -44,7 +47,9 @@ pub const IS = packed struct {
     shamt: u5,
     funct7: u7, // the spec actually names this imm[11:5] but it's usage matches funct7
 
-    pub usingnamespace helpers(@This());
+    immediate: ImmediateMixin(@This()),
+
+    pub const Functs = FunctMixin(@This());
 };
 
 pub const S = packed struct {
@@ -55,9 +60,10 @@ pub const S = packed struct {
     rs2: u5,
     imm5: u7,
 
-    pub const Conversion = packed struct { imm0: u5, imm5: u7 };
+    immediate: ImmediateMixin(@This()),
 
-    pub usingnamespace helpers(@This());
+    pub const Functs = FunctMixin(@This());
+    pub const Conversion = packed struct { imm0: u5, imm5: u7 };
 };
 
 pub const B = packed struct {
@@ -70,9 +76,10 @@ pub const B = packed struct {
     imm5: u6,
     imm12: u1,
 
-    pub const Conversion = packed struct { imm0: u1 = 0, imm1: u4, imm5: u6, imm11: u1, imm12: u1 };
+    immediate: ImmediateMixin(@This()),
 
-    pub usingnamespace helpers(@This());
+    pub const Functs = FunctMixin(@This());
+    pub const Conversion = packed struct { imm0: u1 = 0, imm1: u4, imm5: u6, imm11: u1, imm12: u1 };
 };
 
 pub const U = packed struct {
@@ -80,9 +87,10 @@ pub const U = packed struct {
     rd: u5,
     imm12: u20,
 
-    pub const Conversion = packed struct { imm0: u12 = 0, imm12: u20 };
+    immediate: ImmediateMixin(@This()),
 
-    pub usingnamespace helpers(@This());
+    pub const Functs = FunctMixin(@This());
+    pub const Conversion = packed struct { imm0: u12 = 0, imm12: u20 };
 };
 
 pub const J = packed struct {
@@ -93,9 +101,10 @@ pub const J = packed struct {
     imm1: u10,
     imm20: u1,
 
-    pub const Conversion = packed struct { imm0: u1 = 0, imm1: u10, imm11: u1, imm12: u8, imm20: u1 };
+    immediate: ImmediateMixin(@This()),
 
-    pub usingnamespace helpers(@This());
+    pub const Functs = FunctMixin(@This());
+    pub const Conversion = packed struct { imm0: u1 = 0, imm1: u10, imm11: u1, imm12: u8, imm20: u1 };
 };
 
 // the spec doesn't actually name this format, choosing a full word to be safe
@@ -114,7 +123,9 @@ pub const FENCE = packed struct {
     pi: bool,
     fm: u4,
 
-    pub usingnamespace helpers(@This());
+    immediate: ImmediateMixin(@This()),
+
+    pub const Functs = FunctMixin(@This());
 };
 
 // ECALL and EBREAK use this, although the spec defines their format as I, this
@@ -126,15 +137,38 @@ pub const ENV = packed struct {
     rs1: u5,
     funct12: u12,
 
-    pub usingnamespace helpers(@This());
+    immediate: ImmediateMixin(@This()),
+
+    pub const Functs = FunctMixin(@This());
 };
 
-pub fn helpers(comptime Format: type) type {
-    return struct {
-        pub fn getFuncts() [8]?std.builtin.Type.StructField {
+pub fn ImmediateMixin(comptime Format: type) type {
+    return packed struct {
+        pub fn get(self: *const @This()) Data(@bitSizeOf(Format.Conversion)) {
+            const Conversion = Format.Conversion;
+            var conv: Conversion = @bitCast(@as(std.meta.Int(.unsigned, @bitSizeOf(Conversion)), 0));
+            const format: *const Format = @alignCast(@fieldParentPtr("immediate", self));
+            structCopyFields(&conv, format.*);
+            return .{ .unsigned = @bitCast(conv) };
+        }
+
+        // some instruction formats ignore some number of lower bits,
+        // in those cases the aforementioned lower bits of the given `imm`
+        // argument are silently ignored
+        pub fn set(self: *@This(), imm: Data(@bitSizeOf(Format.Conversion))) void {
+            const conv: Format.Conversion = @bitCast(imm);
+            const format: *Format = @alignCast(@fieldParentPtr("immediate", self));
+            structCopyFields(format, conv);
+        }
+    };
+}
+
+pub fn FunctMixin(comptime Format: type) type {
+    return packed struct {
+        pub fn get() [8]?std.builtin.Type.StructField {
             var functs: [8]?std.builtin.Type.StructField = .{ null } ** 8;
             var index = 0;
-            inline for (@typeInfo(Format).Struct.fields) |field| {
+            inline for (@typeInfo(Format).@"struct".fields) |field| {
                 const eql = std.mem.eql;
                 if (field.name.len > "funct".len and eql(u8, field.name[0.."funct".len], "funct")) {
                     functs[index] = field;
@@ -143,36 +177,19 @@ pub fn helpers(comptime Format: type) type {
             }
             return functs;
         }
-
-        pub fn getImmediate(format_ptr: Format) Data(@bitSizeOf(Format.Conversion)) {
-            const Conversion = Format.Conversion;
-            var conv: Conversion = undefined;
-            // in formats B, U, and J this is actually appropriate, in I and S the below will overwrite it anyway
-            conv.imm0 = 0;
-            structCopyFields(&conv, format_ptr);
-            return .{ .unsigned = @bitCast(conv) };
-        }
-
-        // some instruction formats ignore some number of lower bits,
-        // in those cases the aforementioned lower bits of the given `imm`
-        // argument are silently ignored
-        pub fn setImmediate(format_ptr: *Format, imm: Data(@bitSizeOf(Format.Conversion))) void {
-            const conv: Format.Conversion = @bitCast(imm);
-            structCopyFields(format_ptr, conv);
-        }
-
-        inline fn structCopyFields(dst_ptr: anytype, src: anytype) void {
-            inline for (@typeInfo(@TypeOf(dst_ptr.*)).Struct.fields) |field| {
-                if (@hasField(@TypeOf(src), field.name)) {
-                    @field(dst_ptr, field.name) = @field(src, field.name);
-                }
-            }
-        }
     };
 }
 
+inline fn structCopyFields(dst_ptr: anytype, src: anytype) void {
+    inline for (@typeInfo(@TypeOf(dst_ptr.*)).@"struct".fields) |field| {
+        if (@hasField(@TypeOf(src), field.name)) {
+            @field(dst_ptr, field.name) = @field(src, field.name);
+        }
+    }
+}
+
 test "instruction type width sanity check" {
-    inline for (@typeInfo(@This()).Struct.decls) |decl| {
+    inline for (@typeInfo(@This()).@"struct".decls) |decl| {
         const field = @field(@This(), decl.name);
         if (@TypeOf(field) == type) {
             try expect(@bitSizeOf(field) == 32 or @bitSizeOf(field) == 16);
@@ -181,31 +198,28 @@ test "instruction type width sanity check" {
 }
 
 test "instruction immediates properly signed" {
-    inline for (@typeInfo(@This()).Struct.decls) |decl| {
+    inline for (@typeInfo(@This()).@"struct".decls) |decl| {
         const field = @field(@This(), decl.name);
         if (@TypeOf(field) == type and @hasField(field, "Conversion")) {
-            try instructionImmediateSignTest(field);
+            const Format = field;
+            const Integer = Int(.signed, @bitSizeOf(Format.Conversion));
+            const first_field = @typeInfo(Format.Conversion).@"struct".fields[0];
+            assert(std.mem.eql(u8, first_field.name, "imm0"));
+            const zero_mask: Integer = if (first_field.default_value) |default| blk: {
+                assert(@as(*const first_field.type, @ptrCast(@alignCast(default))).* == 0);
+                break :blk math.maxInt(first_field.type);
+            } else blk: {
+                break :blk 0;
+            };
+
+            var any_instruction: Int(.signed, @bitSizeOf(Format)) = 0;
+            const instruction_ptr: *Format = @ptrCast(&any_instruction);
+            const max = math.maxInt(Integer);
+            const min = math.minInt(Integer);
+            for ([_]Integer{ min, min / 2, 0, max / 2, max }) |i| {
+                instruction_ptr.*.setImmediate(i);
+                try expect(instruction_ptr.*.getImmediate() == @as(Integer, i) & ~zero_mask);
+            }
         }
-    }
-}
-
-fn instructionImmediateSignTest(comptime Format: type) !void {
-    const Integer = helpers.SignedRepr(Format.Conversion);
-    const first_field = @typeInfo(Format.Conversion).Struct.fields[0];
-    assert(std.mem.eql(u8, first_field.name, "imm0"));
-    const zero_mask: Integer = if (first_field.default_value) |default| blk: {
-        assert(@as(*const first_field.type, @ptrCast(@alignCast(default))).* == 0);
-        break :blk math.maxInt(first_field.type);
-    } else blk: {
-        break :blk 0;
-    };
-
-    var any_instruction: helpers.SignedRepr(Format) = 0;
-    const instruction_ptr: *Format = @ptrCast(&any_instruction);
-    const max = math.maxInt(Integer);
-    const min = math.minInt(Integer);
-    for ([_]Integer{ min, min / 2, 0, max / 2, max }) |i| {
-        instruction_ptr.*.setImmediate(i);
-        try expect(instruction_ptr.*.getImmediate() == @as(Integer, i) & ~zero_mask);
     }
 }

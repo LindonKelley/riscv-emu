@@ -65,7 +65,7 @@ pub fn getOpcodeMap() [32][getLargestOpcodeSpace()]?type {
     // todo should iterate over all available extensions
     const ExtensionStruct = I;
     if (@hasDecl(ExtensionStruct, "INSTRUCTIONS")) {
-        for (@typeInfo(ExtensionStruct.INSTRUCTIONS).Struct.decls) |inst_decl| {
+        for (@typeInfo(ExtensionStruct.INSTRUCTIONS).@"struct".decls) |inst_decl| {
             const Instruction = @field(ExtensionStruct.INSTRUCTIONS, inst_decl.name);
             const actual: OpcodeActual = @bitCast(Instruction.ID[0]);
             opcode_map[actual.op][indices[actual.op]] = Instruction;
@@ -81,7 +81,7 @@ pub fn getLargestOpcodeSpace() comptime_int {
     // todo should iterate over all available extensions
     const ExtensionStruct = I;
     if (@hasDecl(ExtensionStruct, "INSTRUCTIONS")) {
-        for (@typeInfo(ExtensionStruct.INSTRUCTIONS).Struct.decls) |inst_decl| {
+        for (@typeInfo(ExtensionStruct.INSTRUCTIONS).@"struct".decls) |inst_decl| {
             const Instruction = @field(ExtensionStruct.INSTRUCTIONS, inst_decl.name);
             const actual: OpcodeActual = @bitCast(Instruction.ID[0]);
             instructions_using_opcode[actual.op] += 1;
@@ -101,7 +101,7 @@ pub fn verifyExtension(extension: anytype) void {
     if (!@hasDecl(extension, "NAME")) {
         @compileError("extensions must have NAME declared");
     }
-    if (@typeInfo(@TypeOf(extension.NAME)) != .Pointer or @typeInfo(@typeInfo(@TypeOf(extension.NAME)).Pointer.child).Array.child != u8) {
+    if (@typeInfo(@TypeOf(extension.NAME)) != .pointer or @typeInfo(@typeInfo(@TypeOf(extension.NAME)).pointer.child).array.child != u8) {
         @compileError("NAME must be a string");
     }
     if (extension.NAME.len < 1) {
@@ -129,7 +129,7 @@ pub fn verifyExtension(extension: anytype) void {
     }
 
     if (@hasDecl(extension, "INSTRUCTIONS")) {
-        for (@typeInfo(extension.INSTRUCTIONS).Struct.decls) |inst_decl| {
+        for (@typeInfo(extension.INSTRUCTIONS).@"struct".decls) |inst_decl| {
             const Instruction = @field(extension.INSTRUCTIONS, inst_decl.name);
             const inst_name = @typeName(Instruction);
             if (!@hasDecl(Instruction, "EXT") or !@hasDecl(Instruction, "ID")) {
@@ -146,10 +146,10 @@ pub fn verifyExtension(extension: anytype) void {
                 @compileError("All INSTRUCTIONS must have an `execute` function: " ++ inst_name);
             }
             const instruction_execute_info = @typeInfo(@TypeOf(Instruction.execute));
-            if (instruction_execute_info != .Fn) {
+            if (instruction_execute_info != .@"fn") {
                 @compileError("Instruction has declaration `execute` that is not a function: " ++ inst_name);
             }
-            const instruction_execute = instruction_execute_info.Fn;
+            const instruction_execute = instruction_execute_info.@"fn";
             if (instruction_execute.params.len != 2) {
                 @compileError("Instruction.execute must have exactly two parameters: " ++ inst_name);
             }
@@ -165,12 +165,16 @@ pub fn verifyExtension(extension: anytype) void {
                 // also if that's the only time Param.type can be generic, I wonder why Zig didn't use a tagged union
                 @compileError("Instruction.execute's second parameter type must not be null: " ++ inst_name);
             }
-            const InstructionFormat = @typeInfo(@TypeOf(Instruction.execute)).Fn.params[1].type.?;
-            if (!@hasDecl(InstructionFormat, "getFuncts")) {
+            const InstructionFormat = @typeInfo(@TypeOf(Instruction.execute)).@"fn".params[1].type.?;
+            if (!@hasDecl(InstructionFormat, "Functs")) {
                 @compileError("Instruction.execute's second parameter must be a valid instruction format, it's " ++
-                    "missing the `getFuncts` function, see `inst_format.zig` for examples: " ++ inst_name);
+                    "missing the `Functs` namespace, see `inst_format.zig` for examples: " ++ inst_name);
             }
-            const functs = InstructionFormat.getFuncts();
+            if (!@hasDecl(InstructionFormat.Functs, "get")) {
+                @compileError("Instruction.execute's second parameter must be a valid instruction format, it's " ++
+                    "missing the `Functs` namespace is missing a `get` function, see `inst_format.zig` for examples: " ++ inst_name);
+            }
+            const functs = InstructionFormat.Functs.get();
             var functs_len = 0;
             for (functs) |funct_optional| {
                 if (funct_optional == null) break;
@@ -184,6 +188,7 @@ pub fn verifyExtension(extension: anytype) void {
             for (functs, 1..) |funct_optional, id_index| {
                 if (funct_optional == null) break;
                 const funct = funct_optional.?;
+                @setEvalBranchQuota(2000);
                 const cast = std.math.cast(funct.type, Instruction.ID[id_index]);
                 if (cast == null) {
                     var buf: [32]u8 = undefined;
@@ -193,10 +198,10 @@ pub fn verifyExtension(extension: anytype) void {
                 }
             }
             const instruction_execute_return_type_info = @typeInfo(instruction_execute.return_type.?);
-            if (instruction_execute_return_type_info != .Void) {
-                if (instruction_execute_return_type_info != .ErrorUnion) {
+            if (instruction_execute_return_type_info != .void) {
+                if (instruction_execute_return_type_info != .error_union) {
                     @compileError("Instruction.execute must return either `void` or `!void`: " ++ inst_name);
-                } else if (instruction_execute_return_type_info.ErrorUnion.payload != void) {
+                } else if (instruction_execute_return_type_info.error_union.payload != void) {
                     @compileError("Instruction.execute must return `void` as the error union payload: " ++ inst_name);
                 }
             }
@@ -207,7 +212,7 @@ pub fn verifyExtension(extension: anytype) void {
 fn isOneOf(value: anytype, array: anytype) bool {
     for (array) |v| {
         switch (@typeInfo(@TypeOf(value))) {
-            .Array, .Pointer => if (std.mem.eql(u8, v, value)) {
+            .array, .pointer => if (std.mem.eql(u8, v, value)) {
                 return true;
             },
             else => if (v == value) {

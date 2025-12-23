@@ -99,9 +99,8 @@ fn mktemp(allocator: std.mem.Allocator, comptime template: []const u8) !["/tmp/"
     var mktemp_process = std.process.Child.init(&.{"mktemp", "-p", "/tmp", template}, allocator);
     mktemp_process.stdout_behavior = .Pipe;
     try mktemp_process.spawn();
-    const process_out_reader = mktemp_process.stdout.?.reader();
+    var process_out_reader = mktemp_process.stdout.?.reader(&.{});
     var temp_file: ["/tmp/".len + template.len]u8 = undefined;
-    const read = try process_out_reader.readAll(&temp_file);
-    std.debug.assert(read == temp_file.len);
+    try process_out_reader.interface.readSliceAll(&temp_file);
     return temp_file;
 }

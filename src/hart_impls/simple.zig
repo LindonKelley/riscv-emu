@@ -83,7 +83,7 @@ pub fn Hart(comptime P_XLEN: comptime_int, comptime Mmu: type) type {
                 }
             };
 
-            const Functions = .{
+            const Functions: instruction.ContextFunctions(@This()) = .{
                 .getXRegister = getXRegister,
                 .setXRegister = setXRegister,
                 .getPc = getPc,

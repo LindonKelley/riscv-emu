@@ -16,7 +16,7 @@ pub fn ExtensionSet(comptime extensions: anytype) type {
         field.* = .{
             .name = extension.NAME,
             .type = type,
-            .default_value = @alignCast(@ptrCast(&extension)),
+            .default_value_ptr = @alignCast(@ptrCast(&extension)),
             .is_comptime = true,
             .alignment = @alignOf(type)
         };

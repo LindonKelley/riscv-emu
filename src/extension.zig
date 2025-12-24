@@ -122,7 +122,7 @@ pub fn verifyExtension(extension: anytype) void {
             const type_info = @typeInfo(@TypeOf(dependency));
             var buf: [64]u8 = undefined;
             const dep_string = try std.fmt.bufPrint(&buf, "DEPENDENCIES[{d}] ", .{i});
-            if (type_info != .Pointer or @typeInfo(type_info.Pointer.child).Array.child != u8) {
+            if (type_info != .pointer or @typeInfo(type_info.pointer.child).array.child != u8) {
                 @compileError(dep_string ++ "must be a string, is " ++ @typeName(@TypeOf(dependency)));
             }
         }

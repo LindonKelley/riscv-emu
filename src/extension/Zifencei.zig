@@ -17,9 +17,10 @@ comptime {
 pub const NAME = "Zifencei";
 pub const VERSION = "2.0";
 pub const STATUS = @import("../extension.zig").SpecificationStatus.ratified;
-// todo this will be changed once I figure out how I want to go about it
-pub fn Requirements(comptime HartContext: type) type {
-    return struct { fenceI: *const fn (self: *HartContext, inst: Data(32)) void };
+pub fn FUNCTIONALITY(comptime HartContext: type) type {
+    return struct {
+        fenceI: *const fn (context: *HartContext, inst: Data(32)) void
+    };
 }
 
 pub const INSTRUCTIONS = struct {

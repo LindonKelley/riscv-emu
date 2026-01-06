@@ -10,3 +10,4 @@ comptime {
 pub const NAME = "A";
 pub const VERSION = "2.1";
 pub const STATUS = @import("../extension.zig").SpecificationStatus.ratified;
+pub const DEPENDENCIES = .{"I"};

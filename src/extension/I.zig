@@ -29,10 +29,38 @@ comptime {
 
 // todo instruction formats may be moved into their specifying extensions, along with specifying an E extension override for those formats as the
 //  E extension cuts one bit out of every register use in instructions and reserves the instruction space gained from that
-// todo extensions can specify overrides, conflicts, dependencies and required(name?) data/functions
+// todo extensions can specify overrides, conflicts(may not be necessary since instructions/overrides can be checked for conflicts), dependencies and required(name?) data/functions
 pub const NAME = "I";
 pub const VERSION = "2.1";
 pub const STATUS = @import("../extension.zig").SpecificationStatus.ratified;
+pub fn FUNCTIONALITY(comptime HartContext: type) type {
+    return struct {
+        pub const XLEN: comptime_int = HartContext.XLEN;
+
+        getXRegister: *const fn(context: *HartContext, rs: u5) Data(XLEN),
+        setXRegister: *const fn(context: *HartContext, rs: u5, v: Data(XLEN)) void,
+        getPc: *const fn(context: *HartContext) Int(.unsigned, XLEN),
+        setPc: *const fn(context: *HartContext, v: Int(.unsigned, XLEN)) void,
+        // need to use a dummy and @TypeOf to get around intended compiler behavior: https://github.com/ziglang/zig/issues/15409
+        load: *const @TypeOf(loadDummy),
+        store: *const @TypeOf(storeDummy),
+        fence: *const fn(context: *HartContext, fm: u4, pred: FenceOperands, succ: FenceOperands) void,
+        ecall: *const fn(context: *HartContext) void,
+        ebreak: *const fn(context: *HartContext) void,
+
+        fn loadDummy(context: *HartContext, comptime width: mmu.MemoryValueWidth, address: Int(.unsigned, XLEN)) mmu.LoadError!width.Data() {
+            _ = context;
+            _ = address;
+            return 0;
+        }
+
+        fn storeDummy(context: *HartContext, comptime width: mmu.MemoryValueWidth, address: Int(.unsigned, XLEN), data: width.Data()) mmu.StoreError!void {
+            _ = context;
+            _ = address;
+            _ = data;
+        }
+    };
+}
 
 pub const INSTRUCTIONS = struct {
     /// ADD Immediate

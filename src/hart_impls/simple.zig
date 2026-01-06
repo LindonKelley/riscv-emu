@@ -14,16 +14,32 @@ const Data = @import("../data.zig").Data;
 const extension = @import("../extension.zig");
 const TickError = extension.TickError;
 const RequestedTrap = extension.RequestedTrap;
+const hart_impls = @import("../hart_impls.zig");
+
+test "simple hart" {
+    var hart = Hart(32, mmu.BasicMmu(32)){ .mmu = mmu.BasicMmu(32){} };
+    // todo Hart needs some comptime field generating to implement extension fields, and that functionality will likely have to be removed from ExtensionSet
+    hart.EXTS.M.test_field -= 1;
+    std.debug.print("\n{}\n", .{ hart.EXTS.M.test_field });
+
+    @TypeOf(hart.EXTS.M).access(65);
+}
+
+// todo get an order of operations figured out and documented bud
+// extension requirements need headers for what operations the hart has to support
 
 /// A simple implementation of a RISC-V Hart, or hardware thread
 /// `P_XLEN` is the Register and Program Counter width, and is the limiting factor on how much memory the
 ///  Hart can immediately address
+/// `Mmu` is the memory management unit, see mmu.zig for implementations
+/// `extensions` is a tuple of desired extensions
 // P_XLEN would just be XLEN if the shadowing rules allowed it
 // todo needs to receive potential implementation overrides for functions from extensions
 // todo above unlikely, instead Hart implementations don't have their own ticking function, and just expose all functions needed to be called by any external one
 // todo needs function that exposes which extensions are supported, and likely also their versions
 // todo above may not be necessary if the exposed functions that are needed to implement an extension are standard across all hart impls
 pub fn Hart(comptime P_XLEN: comptime_int, comptime Mmu: type) type {
+    //, comptime extensions: type
     comptime {
         if (P_XLEN != 32 and P_XLEN != 64) {
             var buf: [32]u8 = undefined;
@@ -43,6 +59,7 @@ pub fn Hart(comptime P_XLEN: comptime_int, comptime Mmu: type) type {
         /// (only 16 and 32 bit encodings are currently frozen, so 32 is really the only option at this time.)
         pub const ILEN = 32;
         /// Extensions available for use
+        pub const EXTS = hart_impls.ExtensionSet(.{ extension.M }){};
         // pub const EXTS = ExtensionSet(.{ extension.I, extension.M });
         // pub const EXTRA_FUNCTIONS_TYPE = getExtraFunctions(EXTS);
 

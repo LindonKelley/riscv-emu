@@ -113,6 +113,22 @@ pub fn verifyExtension(extension: anytype) void {
         @compileError("NAME must begin with one of [A-Z]");
     }
 
+    if (!@hasDecl(extension, "VERSION")) {
+        @compileError("extensions must have VERSION declared");
+    }
+    if (@typeInfo(@TypeOf(extension.VERSION)) != .pointer or @typeInfo(@typeInfo(@TypeOf(extension.VERSION)).pointer.child).array.child != u8) {
+        @compileError("VERSION must be a string");
+    }
+    // todo versions must be in "MAJOR.MINOR" format, where MAJOR and MINOR are both integers, increases in minor versions guarantee backwards compatibility, while major increases indicate loss of it
+    // this whole setup may just be moved over into ExtensionSet since that has to actually do stuff with this information anyway, and this function will simply try to create an extension set to verify that an extension is valid
+
+    if (!@hasDecl(extension, "STATUS")) {
+        @compileError("extensions must have STATUS declared");
+    }
+    if (@TypeOf(extension.STATUS) != SpecificationStatus) {
+        @compileError("STATUS must be a SpecificationStatus");
+    }
+
     if (@hasDecl(extension, "DEPENDENCIES")) {
         const DEPENDENCIES = extension.DEPENDENCIES;
         if (DEPENDENCIES.len == 0) {
@@ -127,6 +143,8 @@ pub fn verifyExtension(extension: anytype) void {
             }
         }
     }
+
+    // todo FUNCTIONALITY
 
     if (@hasDecl(extension, "INSTRUCTIONS")) {
         for (@typeInfo(extension.INSTRUCTIONS).@"struct".decls) |inst_decl| {

@@ -20,6 +20,7 @@ comptime {
 pub const NAME = "M";
 pub const VERSION = "2.0";
 pub const STATUS = @import("../extension.zig").SpecificationStatus.ratified;
+pub const DEPENDENCIES = .{"I"};
 
 pub const INSTRUCTIONS = struct {
     /// MULtiply

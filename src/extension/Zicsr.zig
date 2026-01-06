@@ -10,3 +10,4 @@ comptime {
 pub const NAME = "Ziscr";
 pub const VERSION = "2.0";
 pub const STATUS = @import("../extension.zig").SpecificationStatus.ratified;
+pub const DEPENDENCIES = .{"I"};

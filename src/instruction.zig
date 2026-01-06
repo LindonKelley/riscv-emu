@@ -139,7 +139,7 @@ pub fn ContextFunctions(comptime HartContext: type) type {
         setXRegister: *const fn(hart_ptr: *HartContext, rs: u5, v: Data(XLEN)) void,
         getPc: *const fn(self: *HartContext) Int(.unsigned, XLEN),
         setPc: *const fn(self: *HartContext, v: Int(.unsigned, XLEN)) void,
-        // need to use a dummy and @TypeOf to get around a compiler bug: https://github.com/ziglang/zig/issues/15409
+        // need to use a dummy and @TypeOf to get around intended compiler behavior: https://github.com/ziglang/zig/issues/15409
         load: *const @TypeOf(loadDummy),
         store: *const @TypeOf(storeDummy),
         fence: *const fn(self: *HartContext, fm: u4, pred: FenceOperands, succ: FenceOperands) void,
